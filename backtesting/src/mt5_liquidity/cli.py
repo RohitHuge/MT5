@@ -181,14 +181,15 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         return 1
     sym_meta: SymbolMeta | None = None
     if all(supplied):
-        sym_meta = SymbolMeta(point=args.point, tick_value=args.tick_value, tick_size=args.tick_size,
-                              volume_min=args.volume_min, volume_max=args.volume_max, volume_step=args.volume_step)
+        sym_meta = SymbolMeta(
+            point=args.point, tick_value=args.tick_value, tick_size=args.tick_size,
+            volume_min=args.volume_min, volume_max=args.volume_max, volume_step=args.volume_step,
+        )
     else:
-        try:
-           adapter3 = MT5Adapter(cfg)
-            if adapter3.connect():
+        adapter3 = MT5Adapter(cfg)
+        if adapter3.connect():
+            try:
                 si = adapter3.get_symbol_info(args.symbol)
-                adapter3.disconnect()
                 sym_meta = SymbolMeta(
                     point=si["point"],
                     tick_value=si["trade_tick_value"],
@@ -197,8 +198,12 @@ def cmd_backtest(args: argparse.Namespace) -> int:
                     volume_max=si["volume_max"],
                     volume_step=si["volume_step"],
                 )
-          except Exception as exc:
-            print(f"WARNING: MT5 metadata retrieval failed: {exc}", file=sys.stderr)
+            except (KeyError, TypeError, ValueError) as exc:
+                print(f"ERROR: Invalid MT5 metadata response: {exc}", file=sys.stderr)
+            finally:
+                adapter3.disconnect()
+        else:
+            print("WARNING: Could not connect to MT5 for symbol metadata.", file=sys.stderr)
 
     if sym_meta is None:
         print(
