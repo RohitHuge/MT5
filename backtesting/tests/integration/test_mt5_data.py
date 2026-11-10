@@ -106,6 +106,10 @@ def test_m15_comparison():
     # Validate M5 first
     val = validate_candles(m5_candles, "M5")
     print(f"  M5 validation passed={val.passed}  gaps={len(val.gaps)}  ohlc_violations={len(val.ohlc_violations)}")
+    assert val.passed, (
+        f"M5 validation failed: gaps={val.gaps[:5]}, "
+        f"ohlc_violations={val.ohlc_violations[:5]}, warnings={val.warnings[:5]}"
+    )
 
     # Derive M15
     agg = aggregate_m5_to_m15(m5_candles)
@@ -128,6 +132,12 @@ def test_m15_comparison():
         for m in result["mismatched"][:10]:
             print(f"    {m['ts']}  derived={m['derived_ohlc']}  native={m['native_ohlc']}  reason={m['reason']}")
 
+    assert not result["missing_derived"], (
+        f"Native M15 candles missing from derived series: {result['missing_derived'][:5]}"
+    )
+    assert not result["missing_native"], (
+        f"Derived M15 candles missing from native series: {result['missing_native'][:5]}"
+    )
     assert result["coverage_pct"] >= 95.0, (
         f"M15 coverage {result['coverage_pct']}% < 95%. "
         f"Mismatches: {result['mismatched'][:3]}"
