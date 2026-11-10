@@ -45,6 +45,8 @@ class BacktestConfig:
     slippage_points: int = 3
     max_daily_loss_pct: float = 3.0
     initial_equity: float = 10_000.0
+    # Daily risk accounting. IANA zone, e.g. America/New_York or UTC.
+    trading_day_timezone: str = "UTC"
 
 
 def load_config(env_path: str | None = None) -> BacktestConfig:

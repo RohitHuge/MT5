@@ -23,6 +23,10 @@ check_entry_candle: evaluates the fill candle for immediate SL/TP. The gap check
 is omitted because we just filled at the candle open — there is no prior gap from
 our perspective. SL/TP is evaluated against the full candle range from open onward.
 
+OHLC limitation: bars do not reveal whether high or low occurred first. When both
+SL and TP are touched, this simulator chooses SL-first. The fill-candle check uses
+the same conservative rule and cannot infer intrabar sequencing, latency, or ticks.
+
 No MT5 imports. No order_send.
 """
 from __future__ import annotations

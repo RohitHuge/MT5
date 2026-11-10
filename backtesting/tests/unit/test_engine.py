@@ -445,3 +445,17 @@ def test_volume_min_greater_than_max_raises():
 def test_valid_metadata_accepted():
     # Exact XAUUSD values should pass validation
     _run([], [_candle(i) for i in range(5)], meta=XAUUSD)
+
+
+def test_trading_day_timezone_accepts_non_utc_zone():
+    cfg = BacktestConfig(**{**CFG.__dict__, "trading_day_timezone": "America/New_York"})
+    candle = Candle(timestamp=datetime(2025, 1, 7, 0, 30, tzinfo=timezone.utc),
+                    open=2000.0, high=2001.0, low=1999.0, close=2000.0)
+    result = _run([], [candle], cfg=cfg)
+    assert result.stats.total_trades == 0
+
+
+def test_invalid_trading_day_timezone_fails_fast():
+    cfg = BacktestConfig(**{**CFG.__dict__, "trading_day_timezone": "Not/A_Real_Zone"})
+    with pytest.raises(ValueError, match="trading_day_timezone"):
+        _run([], [_candle(0)], cfg=cfg)

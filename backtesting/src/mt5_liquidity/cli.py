@@ -146,6 +146,8 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     cfg.max_positions = args.max_positions
     cfg.max_daily_loss_pct = args.max_daily_loss_pct
     cfg.initial_equity     = args.equity
+    cfg.trading_day_timezone = args.trading_day_timezone
+    cfg.commission_usd = args.commission_per_lot_side
 
     from_dt = _parse_date(args.from_date)
     to_dt   = _parse_date(args.to_date)
@@ -170,30 +172,43 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     if agg.incomplete_windows:
         print(f"  Warning: {len(agg.incomplete_windows)} incomplete M15 window(s) dropped from backtest.")
 
-    # Symbol metadata — try MT5; fall back to XAUUSD defaults
+    # Symbol metadata: accept a complete manual set or retrieve all values from MT5.
     from .backtest.engine import SymbolMeta, run_backtest
+    manual_values = [args.point, args.tick_value, args.tick_size, args.volume_min, args.volume_max, args.volume_step]
+    supplied = [value is not None for value in manual_values]
+    if any(supplied) and not all(supplied):
+        print("ERROR: Supply all six metadata flags together, or none to retrieve from MT5.", file=sys.stderr)
+        return 1
     sym_meta: SymbolMeta | None = None
-    try:
+    if all(supplied):
+        sym_meta = SymbolMeta(
+            point=args.point, tick_value=args.tick_value, tick_size=args.tick_size,
+            volume_min=args.volume_min, volume_max=args.volume_max, volume_step=args.volume_step,
+        )
+    else:
         adapter3 = MT5Adapter(cfg)
         if adapter3.connect():
-            si = adapter3.get_symbol_info(args.symbol)
-            adapter3.disconnect()
-            sym_meta = SymbolMeta(
-                point=si["point"],
-                tick_value=si["trade_tick_value"],
-                tick_size=si["trade_tick_size"],
-                volume_min=si["volume_min"],
-                volume_max=si["volume_max"],
-                volume_step=si["volume_step"],
-            )
-    except Exception:
-        pass
+            try:
+                si = adapter3.get_symbol_info(args.symbol)
+                sym_meta = SymbolMeta(
+                    point=si["point"],
+                    tick_value=si["trade_tick_value"],
+                    tick_size=si["trade_tick_size"],
+                    volume_min=si["volume_min"],
+                    volume_max=si["volume_max"],
+                    volume_step=si["volume_step"],
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                print(f"ERROR: Invalid MT5 metadata response: {exc}", file=sys.stderr)
+            finally:
+                adapter3.disconnect()
+        else:
+            print("WARNING: Could not connect to MT5 for symbol metadata.", file=sys.stderr)
 
     if sym_meta is None:
         print(
             f"ERROR: Could not retrieve symbol metadata for {args.symbol}. "
-            "Start the MT5 terminal and ensure the symbol is available, "
-            "or supply metadata via --point / --tick-value etc. (see --help).",
+            "Start MT5 with the selected symbol, or provide all six manual metadata flags.",
             file=sys.stderr,
         )
         return 1
@@ -243,6 +258,14 @@ def main() -> None:
     p_bt.add_argument("--max-positions", type=int, default=1)
     p_bt.add_argument("--max-daily-loss-pct", type=float, default=3.0)
     p_bt.add_argument("--equity", type=float, default=10_000.0)
+    p_bt.add_argument("--commission-per-lot-side", type=float, default=0.0)
+    p_bt.add_argument("--trading-day-timezone", default="UTC", help="IANA timezone for daily loss reset")
+    p_bt.add_argument("--point", type=float)
+    p_bt.add_argument("--tick-value", type=float)
+    p_bt.add_argument("--tick-size", type=float)
+    p_bt.add_argument("--volume-min", type=float)
+    p_bt.add_argument("--volume-max", type=float)
+    p_bt.add_argument("--volume-step", type=float)
 
     args = parser.parse_args()
     dispatch = {

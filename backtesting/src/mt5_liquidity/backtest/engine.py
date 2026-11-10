@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import BacktestConfig
 from ..data.candles import Candle
@@ -152,7 +153,14 @@ def run_backtest(
     open_positions: list[OpenPosition] = []
     equity_curve: list[tuple[datetime, float]] = []
 
-    # Daily loss tracking
+    # Daily loss tracking uses the configured trading-day timezone. Baseline is
+    # realised equity at the first observed candle of each trading day; positions
+    # carried overnight are marked to market (including estimated round-trip
+    # commission) against that day's baseline.
+    try:
+        trading_tz = ZoneInfo(config.trading_day_timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"Unknown trading_day_timezone: {config.trading_day_timezone}") from exc
     day_start_equity: dict[date, float] = {}
 
     counters = {
@@ -166,7 +174,9 @@ def run_backtest(
     rejected_sizings: list[SizingResult] = []
 
     for idx, candle in enumerate(m5_candles):
-        candle_date = candle.timestamp.date()
+        if candle.timestamp.tzinfo is None or candle.timestamp.utcoffset() is None:
+            raise ValueError("Backtest candles must have timezone-aware timestamps")
+        candle_date = candle.timestamp.astimezone(trading_tz).date()
 
         # Initialise daily equity baseline for this day
         if candle_date not in day_start_equity:
@@ -202,16 +212,20 @@ def run_backtest(
 
             # Fix 5: daily loss guard uses realised equity + unrealised floating P&L
             day_baseline = day_start_equity.get(candle_date, initial_equity)
-            unrealised = sum(pos.unrealized_pnl(candle) for pos in open_positions)
-            current_equity_with_floating = equity + unrealised
+            unrealised_gross = sum(pos.unrealized_pnl(candle) for pos in open_positions)
+            estimated_open_commission = sum(
+                2.0 * config.commission_usd * pos.fill.lots for pos in open_positions
+            )
+            unrealised_net = unrealised_gross - estimated_open_commission
+            current_equity_with_floating = equity + unrealised_net
             daily_loss_usd = current_equity_with_floating - day_baseline
             if daily_loss_usd < 0:
                 daily_loss_pct = abs(daily_loss_usd) / day_baseline * 100.0 if day_baseline > 0 else 0.0
                 if daily_loss_pct >= config.max_daily_loss_pct:
                     counters["skipped_daily_loss"] += 1
                     logger.debug(
-                        "Skipped %s — daily loss %.2f%% >= limit %.2f%% (unrealised=%.2f)",
-                        setup.setup_id, daily_loss_pct, config.max_daily_loss_pct, unrealised,
+                        "Skipped %s — daily loss %.2f%% >= limit %.2f%% (unrealised_net=%.2f)",
+                        setup.setup_id, daily_loss_pct, config.max_daily_loss_pct, unrealised_net,
                     )
                     continue
 
@@ -234,7 +248,7 @@ def run_backtest(
             sizing = calculate_position_size(
                 signal_price=actual_fill_price,      # Fix 1: use fill price
                 stop_loss_price=setup.stop_loss_price,
-                equity=equity,
+                equity=current_equity_with_floating,
                 risk_pct=config.risk_pct,
                 volume_min=symbol_meta.volume_min,
                 volume_max=symbol_meta.volume_max,
