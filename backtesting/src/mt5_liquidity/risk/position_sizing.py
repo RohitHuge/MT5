@@ -66,7 +66,6 @@ def calculate_position_size(
             0.0, risk_amount, sl_points, value_per_point_per_lot,
             "max_lots_per_trade must be > 0",
         )
-    risk_amount = equity * risk_pct / 100.0
     risk_per_lot = sl_points * value_per_point_per_lot
 
     if risk_per_lot <= 0:
