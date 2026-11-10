@@ -445,3 +445,47 @@ def test_volume_min_greater_than_max_raises():
 def test_valid_metadata_accepted():
     # Exact XAUUSD values should pass validation
     _run([], [_candle(i) for i in range(5)], meta=XAUUSD)
+
+
+def test_same_candle_immediate_exit_does_not_allow_replacement():
+    """Only one successful entry attempt is admitted per M5 candle."""
+    cfg = BacktestConfig(**{**CFG.__dict__, "max_positions": 1})
+    first = _make_setup("SAME_A", direction="BUY", sl_price=1990.0, rejection_idx=1)
+    second = _make_setup("SAME_B", direction="BUY", sl_price=1990.0, rejection_idx=1)
+    candles = [_candle(i) for i in range(8)]
+    # Both setups fill at idx=2. The first trade immediately hits SL.
+    candles[2] = _candle(2, o=2000.0, h=2002.0, l=1985.0, c=1986.0)
+    result = _run([first, second], candles, cfg=cfg)
+    assert result.trades_opened == 1
+    assert result.stats.total_trades == 1
+    assert result.setups_skipped_max_pos == 1
+
+
+def test_duplicate_setup_id_is_only_processed_once():
+    setup = _make_setup("DUPLICATE", rejection_idx=1)
+    candles = [_candle(i) for i in range(8)]
+    result = _run([setup, setup], candles)
+    assert result.trades_opened == 1
+
+
+def test_gap_through_buy_stop_rejects_entry_instead_of_profitable_sl():
+    """A BUY fill below its stop is invalid; do not book a profitable SL."""
+    setup = _make_setup("GAP_INVALID_BUY", direction="BUY",
+                        signal_price=2000.0, sl_price=1990.0, rejection_idx=1)
+    candles = [_candle(i) for i in range(8)]
+    candles[2] = _candle(2, o=1980.0, h=1985.0, l=1975.0, c=1982.0)
+    result = _run([setup], candles)
+    assert result.trades_opened == 0
+    assert result.setups_skipped_sizing == 1
+    assert "wrong side" in result.rejected_sizings[0].rejection_reason
+
+
+def test_gap_through_sell_stop_rejects_entry():
+    """A SELL fill above its stop is invalid."""
+    setup = _make_setup("GAP_INVALID_SELL", direction="SELL",
+                        signal_price=2000.0, sl_price=2010.0, rejection_idx=1)
+    candles = [_candle(i) for i in range(8)]
+    candles[2] = _candle(2, o=2020.0, h=2025.0, l=2015.0, c=2022.0)
+    result = _run([setup], candles)
+    assert result.trades_opened == 0
+    assert result.setups_skipped_sizing == 1
