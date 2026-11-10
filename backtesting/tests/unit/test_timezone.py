@@ -59,3 +59,12 @@ def test_validate_catches_mixed_aware_and_naive():
     result = validate_candles([aware, naive], "M5")
     naive_warnings = [w for w in result.warnings if "naive" in w.lower()]
     assert len(naive_warnings) >= 1
+
+
+
+def test_mixed_naive_aware_series_fails_validation():
+    aware = make_candle(BASE_TIME, 100, 105, 99, 103)
+    naive = make_candle(BASE_TIME, 100, 105, 99, 103)
+    object.__setattr__(naive, "timestamp", datetime(2025, 1, 6, 0, 5))
+    result = validate_candles([aware, naive], "M5")
+    assert result.passed is False
