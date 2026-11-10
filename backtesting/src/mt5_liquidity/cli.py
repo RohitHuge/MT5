@@ -122,7 +122,14 @@ def cmd_zones(args: argparse.Namespace) -> int:
     except Exception:
         pass
 
-    point = sym_info.get("point", 0.01)
+    point = sym_info.get("point")
+    if point is None or point <= 0:
+        print(
+            f"ERROR: Could not retrieve valid point metadata for {args.symbol}; "
+            "refusing to build zones with a guessed point value.",
+            file=sys.stderr,
+        )
+        return 1
     pivots = detect_pivots(m5, cfg.pivot_left, cfg.pivot_right)
     zones = build_zones(m5, pivots, cfg.zone_tolerance_points, point)
     print_zones_report(zones, m5)
