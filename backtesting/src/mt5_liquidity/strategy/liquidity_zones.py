@@ -93,15 +93,43 @@ def build_zones(
     tolerance = tolerance_points * point
     zones: list[LiquidityZone] = []
 
-    for i, candle in enumerate(candles):
-        # 1. Discover any newly confirmed pivots at this index
-        newly_confirmed = [p for p in pivots if p.confirmed_at_index == i]
+    # Precompute transitive clusters, then activate each pivot only when its
+    # confirmation candle is reached. This preserves causal/no-look-ahead use.
+    by_confirmation: dict[int, list[list[Pivot]]] = {}
+    for pivot_type in (PivotType.HIGH, PivotType.LOW):
+        typed = [p for p in pivots if p.pivot_type == pivot_type]
+        for cluster in _cluster_pivots(typed, tolerance):
+            confirmation_index = max(p.confirmed_at_index for p in cluster)
+            by_confirmation.setdefault(confirmation_index, []).append(cluster)
 
-        for pivot in newly_confirmed:
-            if pivot.pivot_type == PivotType.HIGH:
-                _integrate_pivot(zones, pivot, ZoneType.BSL, tolerance, candle.timestamp, i)
-            else:
-                _integrate_pivot(zones, pivot, ZoneType.SSL, tolerance, candle.timestamp, i)
+    for i, candle in enumerate(candles):
+        # 1. Discover clusters only when every member pivot is confirmed.
+        for cluster in by_confirmation.get(i, []):
+            pivot_type = cluster[0].pivot_type
+            zone_type = ZoneType.BSL if pivot_type == PivotType.HIGH else ZoneType.SSL
+            cluster_pivots = sorted(cluster, key=lambda p: p.confirmed_at_index)
+            # A connected cluster may span more than a single tolerance band.
+            upper = max(p.price for p in cluster_pivots) + tolerance
+            lower = min(p.price for p in cluster_pivots) - tolerance
+            first = cluster_pivots[0]
+            zone = LiquidityZone(
+                zone_id=_zone_id(zone_type, i),
+                zone_type=zone_type,
+                upper=upper,
+                lower=lower,
+                source_pivot_indices=[p.index for p in cluster_pivots],
+                source_pivots=list(cluster_pivots),
+                created_at_index=i,
+                created_at=candle.timestamp,
+            )
+            zone.add_event(
+                "CREATED", candle.timestamp, candle_index=i, price=first.price,
+                detail=(
+                    f"Transitive cluster with {len(cluster_pivots)} pivots; "
+                    f"all confirmed by index {i}"
+                ),
+            )
+            zones.append(zone)
 
         # 2. Update active zone statuses based on current candle
         for zone in zones:
