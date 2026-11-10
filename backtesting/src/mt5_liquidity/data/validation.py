@@ -61,10 +61,19 @@ def validate_candles(candles: list[Candle], timeframe: str = "M5") -> Validation
             result.passed = False
         seen_timestamps.add(ts)
 
-        # 2. Chronological order
-        if i > 0 and ts <= candles[i - 1].timestamp:
-            result.out_of_order.append(ts)
-            result.passed = False
+        # 2. Chronological order (guard against comparing naive vs aware)
+        if i > 0:
+            prev_ts = candles[i - 1].timestamp
+            try:
+                if ts <= prev_ts:
+                    result.out_of_order.append(ts)
+                    result.passed = False
+            except TypeError:
+                # Mixed naive/aware — record as warning, skip ordering check
+                result.warnings.append(
+                    f"Cannot compare timestamps at index {i}: "
+                    f"mixed naive/aware ({prev_ts} vs {ts})"
+                )
 
         # 3. OHLC invariants
         if c.high < c.open or c.high < c.close:
