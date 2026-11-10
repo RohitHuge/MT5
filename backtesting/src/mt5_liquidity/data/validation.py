@@ -93,11 +93,14 @@ def validate_candles(candles: list[Candle], timeframe: str = "M5") -> Validation
         # 4. Gap detection
         if i > 0 and expected_interval is not None:
             prev_ts = candles[i - 1].timestamp
-            diff = ts - prev_ts
-            if diff > expected_interval and not _is_weekend_gap(prev_ts, ts):
-                result.gaps.append((prev_ts, ts))
-                result.warnings.append(
-                    f"Gap detected: {prev_ts.isoformat()} -> {ts.isoformat()} ({diff})"
-                )
+            try:
+                diff = ts - prev_ts
+                if diff > expected_interval and not _is_weekend_gap(prev_ts, ts):
+                    result.gaps.append((prev_ts, ts))
+                    result.warnings.append(
+                        f"Gap detected: {prev_ts.isoformat()} -> {ts.isoformat()} ({diff})"
+                    )
+            except TypeError:
+                pass  # mixed naive/aware already warned above
 
     return result
