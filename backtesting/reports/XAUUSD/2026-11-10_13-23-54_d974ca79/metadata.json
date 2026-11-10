@@ -1,0 +1,79 @@
+{
+  "config": {
+    "cache_dir": "data/processed",
+    "commission_usd": 0.0,
+    "initial_equity": 10000.0,
+    "log_dir": "logs",
+    "max_daily_loss_pct": 3.0,
+    "max_positions": 1,
+    "mss_timeout_bars": 20,
+    "mt5_path": "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
+    "mt5_server": "",
+    "pivot_left": 2,
+    "pivot_right": 2,
+    "raw_dir": "data/raw",
+    "retest_band_points": 5,
+    "retest_timeout_bars": 10,
+    "risk_pct": 0.5,
+    "rr_target": 2.0,
+    "sl_buffer_points": 5,
+    "slippage_points": 3,
+    "spread_points": 21,
+    "sweep_min_points": 5,
+    "symbol": "XAUUSD",
+    "zone_tolerance_points": 10
+  },
+  "cost_assumptions": {
+    "commission_usd_per_lot_per_side": 0.0,
+    "note": "swap excluded (Phase 4)",
+    "slippage_points": 3,
+    "spread_points": 21,
+    "swap": "excluded"
+  },
+  "data_quality": {
+    "incomplete_m15_windows": [
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-28T22:00:00+00:00"
+      },
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-29T10:00:00+00:00"
+      },
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-29T11:00:00+00:00"
+      },
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-29T13:00:00+00:00"
+      },
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-29T16:15:00+00:00"
+      }
+    ]
+  },
+  "date_range": {
+    "from": "2026-08-13",
+    "to": "2026-11-10"
+  },
+  "generated_at_utc": "2026-11-10T13:23:54.259022+00:00",
+  "position_sizing_rejections": [],
+  "run_id": "2026-11-10_13-23-54_d974ca79",
+  "schema_version": 1,
+  "symbol": "XAUUSD",
+  "symbol_metadata": {
+    "point": 0.01,
+    "tick_size": 0.01,
+    "tick_value": 1.0,
+    "volume_max": 100.0,
+    "volume_min": 0.01,
+    "volume_step": 0.01
+  }
+}
