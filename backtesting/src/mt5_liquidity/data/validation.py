@@ -45,13 +45,18 @@ def validate_candles(candles: list[Candle], timeframe: str = "M5") -> Validation
     """
     result = ValidationResult(passed=True, candle_count=len(candles))
 
-    # Mixed or naive timestamps make ordering/gap interpretation ambiguous.
-    # Candle normally rejects naive values, but validate defensively for
-    # deserialised/externally constructed objects.
+    # Mixed timezones make ordering/gap interpretation ambiguous. Internally
+    # the project timeline is UTC, so require UTC-aware timestamps throughout.
     for i, candle in enumerate(candles):
         ts = candle.timestamp
         if ts.tzinfo is None or ts.utcoffset() is None:
             result.warnings.append(f"naive timestamp at index {i}: {ts.isoformat()}")
+            result.passed = False
+        elif ts.utcoffset().total_seconds() != 0:
+            result.warnings.append(
+                f"non-UTC timestamp at index {i}: {ts.isoformat()} "
+                f"(offset={ts.utcoffset()})"
+            )
             result.passed = False
 
     if not candles:
