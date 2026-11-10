@@ -1,0 +1,1010 @@
+{
+  "audit_created_utc": "2026-11-10T07:02:15.370033+00:00",
+  "symbol": "XAUUSD",
+  "broker_server": "VantageMarkets-Demo",
+  "date_range_utc": {
+    "start_inclusive": "2026-08-13T00:00:00+00:00",
+    "end_inclusive": "2026-11-09T23:59:59+00:00"
+  },
+  "timezone_note": "MT5 epoch timestamps are converted to UTC. The broker's chart display timezone is not inferred.",
+  "symbol_metadata": {
+    "name": "XAUUSD",
+    "description": "Gold US Dollar",
+    "digits": 2,
+    "point": 0.01,
+    "trade_tick_size": 0.01,
+    "trade_contract_size": 100.0,
+    "currency_base": "XAU",
+    "currency_profit": "USD",
+    "currency_margin": "USD"
+  },
+  "m5": {
+    "timeframe": "M5",
+    "candle_count": 17353,
+    "first_candle_utc": "2026-08-13T01:00:00+00:00",
+    "last_candle_utc": "2026-11-09T23:55:00+00:00",
+    "duplicate_timestamp_count": 0,
+    "duplicate_samples": [],
+    "out_of_order_count": 0,
+    "out_of_order_samples": [],
+    "invalid_ohlc_count": 0,
+    "invalid_ohlc_samples": [],
+    "non_positive_price_count": 0,
+    "non_positive_price_samples": [],
+    "zero_tick_volume_count": 0,
+    "gap_count": 67,
+    "gap_samples": [
+      {
+        "previous_utc": "2026-08-13T23:55:00+00:00",
+        "next_utc": "2026-08-14T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-14T23:55:00+00:00",
+        "next_utc": "2026-08-17T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-08-17T23:55:00+00:00",
+        "next_utc": "2026-08-18T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-18T23:55:00+00:00",
+        "next_utc": "2026-08-19T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-19T23:55:00+00:00",
+        "next_utc": "2026-08-20T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-20T23:55:00+00:00",
+        "next_utc": "2026-08-21T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-21T23:55:00+00:00",
+        "next_utc": "2026-08-24T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-08-24T23:55:00+00:00",
+        "next_utc": "2026-08-25T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-25T23:55:00+00:00",
+        "next_utc": "2026-08-26T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-26T23:55:00+00:00",
+        "next_utc": "2026-08-27T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-27T23:55:00+00:00",
+        "next_utc": "2026-08-28T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-28T23:55:00+00:00",
+        "next_utc": "2026-08-31T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-08-31T23:55:00+00:00",
+        "next_utc": "2026-09-01T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-01T23:55:00+00:00",
+        "next_utc": "2026-09-02T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-02T23:55:00+00:00",
+        "next_utc": "2026-09-03T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-03T23:55:00+00:00",
+        "next_utc": "2026-09-04T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-04T23:55:00+00:00",
+        "next_utc": "2026-09-07T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-09-07T21:25:00+00:00",
+        "next_utc": "2026-09-08T01:00:00+00:00",
+        "gap_minutes": 215.0,
+        "missing_bar_estimate": 42,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-08T23:55:00+00:00",
+        "next_utc": "2026-09-09T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-09T23:55:00+00:00",
+        "next_utc": "2026-09-10T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-10T23:55:00+00:00",
+        "next_utc": "2026-09-11T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-11T23:55:00+00:00",
+        "next_utc": "2026-09-14T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-09-14T23:55:00+00:00",
+        "next_utc": "2026-09-15T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-15T23:55:00+00:00",
+        "next_utc": "2026-09-16T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-16T23:55:00+00:00",
+        "next_utc": "2026-09-17T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-17T23:55:00+00:00",
+        "next_utc": "2026-09-18T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-18T23:55:00+00:00",
+        "next_utc": "2026-09-21T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-09-21T23:55:00+00:00",
+        "next_utc": "2026-09-22T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-22T23:55:00+00:00",
+        "next_utc": "2026-09-23T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-23T23:55:00+00:00",
+        "next_utc": "2026-09-24T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-24T23:55:00+00:00",
+        "next_utc": "2026-09-25T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-25T23:55:00+00:00",
+        "next_utc": "2026-09-28T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-09-28T21:55:00+00:00",
+        "next_utc": "2026-09-28T22:05:00+00:00",
+        "gap_minutes": 10.0,
+        "missing_bar_estimate": 1,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-28T23:55:00+00:00",
+        "next_utc": "2026-09-29T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-29T10:00:00+00:00",
+        "next_utc": "2026-09-29T10:10:00+00:00",
+        "gap_minutes": 10.0,
+        "missing_bar_estimate": 1,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-29T10:55:00+00:00",
+        "next_utc": "2026-09-29T11:05:00+00:00",
+        "gap_minutes": 10.0,
+        "missing_bar_estimate": 1,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-29T12:55:00+00:00",
+        "next_utc": "2026-09-29T13:05:00+00:00",
+        "gap_minutes": 10.0,
+        "missing_bar_estimate": 1,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-29T16:20:00+00:00",
+        "next_utc": "2026-09-29T16:30:00+00:00",
+        "gap_minutes": 10.0,
+        "missing_bar_estimate": 1,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-29T23:55:00+00:00",
+        "next_utc": "2026-09-30T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-30T23:55:00+00:00",
+        "next_utc": "2026-10-01T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-01T23:55:00+00:00",
+        "next_utc": "2026-10-02T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-02T23:55:00+00:00",
+        "next_utc": "2026-10-05T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-10-05T23:55:00+00:00",
+        "next_utc": "2026-10-06T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-06T23:55:00+00:00",
+        "next_utc": "2026-10-07T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-07T23:55:00+00:00",
+        "next_utc": "2026-10-08T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-08T23:55:00+00:00",
+        "next_utc": "2026-10-09T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-09T23:55:00+00:00",
+        "next_utc": "2026-10-12T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-10-12T23:55:00+00:00",
+        "next_utc": "2026-10-13T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-13T23:55:00+00:00",
+        "next_utc": "2026-10-14T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-14T23:55:00+00:00",
+        "next_utc": "2026-10-15T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-15T23:55:00+00:00",
+        "next_utc": "2026-10-16T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-16T23:55:00+00:00",
+        "next_utc": "2026-10-19T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-10-19T23:55:00+00:00",
+        "next_utc": "2026-10-20T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-20T23:55:00+00:00",
+        "next_utc": "2026-10-21T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-21T23:55:00+00:00",
+        "next_utc": "2026-10-22T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-22T23:55:00+00:00",
+        "next_utc": "2026-10-23T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-23T23:55:00+00:00",
+        "next_utc": "2026-10-26T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-10-26T23:55:00+00:00",
+        "next_utc": "2026-10-27T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-27T23:55:00+00:00",
+        "next_utc": "2026-10-28T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-28T23:55:00+00:00",
+        "next_utc": "2026-10-29T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-29T23:55:00+00:00",
+        "next_utc": "2026-10-30T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-30T23:55:00+00:00",
+        "next_utc": "2026-11-02T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-11-02T23:55:00+00:00",
+        "next_utc": "2026-11-03T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-11-03T23:55:00+00:00",
+        "next_utc": "2026-11-04T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-11-04T23:55:00+00:00",
+        "next_utc": "2026-11-05T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-11-05T23:55:00+00:00",
+        "next_utc": "2026-11-06T01:00:00+00:00",
+        "gap_minutes": 65.0,
+        "missing_bar_estimate": 12,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-11-06T23:55:00+00:00",
+        "next_utc": "2026-11-09T01:00:00+00:00",
+        "gap_minutes": 2945.0,
+        "missing_bar_estimate": 588,
+        "classification": "likely_weekend_or_market_closure"
+      }
+    ],
+    "spread_points": {
+      "minimum": 21,
+      "median": 21,
+      "p95": 21.0,
+      "maximum": 28,
+      "zero_spread_count": 0,
+      "outlier_count": 0,
+      "outlier_samples": []
+    }
+  },
+  "m15": {
+    "timeframe": "M15",
+    "candle_count": 5786,
+    "first_candle_utc": "2026-08-13T01:00:00+00:00",
+    "last_candle_utc": "2026-11-09T23:45:00+00:00",
+    "duplicate_timestamp_count": 0,
+    "duplicate_samples": [],
+    "out_of_order_count": 0,
+    "out_of_order_samples": [],
+    "invalid_ohlc_count": 0,
+    "invalid_ohlc_samples": [],
+    "non_positive_price_count": 0,
+    "non_positive_price_samples": [],
+    "zero_tick_volume_count": 0,
+    "gap_count": 62,
+    "gap_samples": [
+      {
+        "previous_utc": "2026-08-13T23:45:00+00:00",
+        "next_utc": "2026-08-14T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-14T23:45:00+00:00",
+        "next_utc": "2026-08-17T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-08-17T23:45:00+00:00",
+        "next_utc": "2026-08-18T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-18T23:45:00+00:00",
+        "next_utc": "2026-08-19T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-19T23:45:00+00:00",
+        "next_utc": "2026-08-20T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-20T23:45:00+00:00",
+        "next_utc": "2026-08-21T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-21T23:45:00+00:00",
+        "next_utc": "2026-08-24T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-08-24T23:45:00+00:00",
+        "next_utc": "2026-08-25T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-25T23:45:00+00:00",
+        "next_utc": "2026-08-26T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-26T23:45:00+00:00",
+        "next_utc": "2026-08-27T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-27T23:45:00+00:00",
+        "next_utc": "2026-08-28T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-08-28T23:45:00+00:00",
+        "next_utc": "2026-08-31T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-08-31T23:45:00+00:00",
+        "next_utc": "2026-09-01T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-01T23:45:00+00:00",
+        "next_utc": "2026-09-02T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-02T23:45:00+00:00",
+        "next_utc": "2026-09-03T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-03T23:45:00+00:00",
+        "next_utc": "2026-09-04T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-04T23:45:00+00:00",
+        "next_utc": "2026-09-07T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-09-07T21:15:00+00:00",
+        "next_utc": "2026-09-08T01:00:00+00:00",
+        "gap_minutes": 225.0,
+        "missing_bar_estimate": 14,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-08T23:45:00+00:00",
+        "next_utc": "2026-09-09T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-09T23:45:00+00:00",
+        "next_utc": "2026-09-10T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-10T23:45:00+00:00",
+        "next_utc": "2026-09-11T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-11T23:45:00+00:00",
+        "next_utc": "2026-09-14T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-09-14T23:45:00+00:00",
+        "next_utc": "2026-09-15T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-15T23:45:00+00:00",
+        "next_utc": "2026-09-16T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-16T23:45:00+00:00",
+        "next_utc": "2026-09-17T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-17T23:45:00+00:00",
+        "next_utc": "2026-09-18T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-18T23:45:00+00:00",
+        "next_utc": "2026-09-21T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-09-21T23:45:00+00:00",
+        "next_utc": "2026-09-22T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-22T23:45:00+00:00",
+        "next_utc": "2026-09-23T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-23T23:45:00+00:00",
+        "next_utc": "2026-09-24T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-24T23:45:00+00:00",
+        "next_utc": "2026-09-25T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-25T23:45:00+00:00",
+        "next_utc": "2026-09-28T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-09-28T23:45:00+00:00",
+        "next_utc": "2026-09-29T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-29T23:45:00+00:00",
+        "next_utc": "2026-09-30T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-09-30T23:45:00+00:00",
+        "next_utc": "2026-10-01T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-01T23:45:00+00:00",
+        "next_utc": "2026-10-02T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-02T23:45:00+00:00",
+        "next_utc": "2026-10-05T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-10-05T23:45:00+00:00",
+        "next_utc": "2026-10-06T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-06T23:45:00+00:00",
+        "next_utc": "2026-10-07T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-07T23:45:00+00:00",
+        "next_utc": "2026-10-08T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-08T23:45:00+00:00",
+        "next_utc": "2026-10-09T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-09T23:45:00+00:00",
+        "next_utc": "2026-10-12T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-10-12T23:45:00+00:00",
+        "next_utc": "2026-10-13T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-13T23:45:00+00:00",
+        "next_utc": "2026-10-14T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-14T23:45:00+00:00",
+        "next_utc": "2026-10-15T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-15T23:45:00+00:00",
+        "next_utc": "2026-10-16T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-16T23:45:00+00:00",
+        "next_utc": "2026-10-19T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-10-19T23:45:00+00:00",
+        "next_utc": "2026-10-20T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-20T23:45:00+00:00",
+        "next_utc": "2026-10-21T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-21T23:45:00+00:00",
+        "next_utc": "2026-10-22T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-22T23:45:00+00:00",
+        "next_utc": "2026-10-23T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-23T23:45:00+00:00",
+        "next_utc": "2026-10-26T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-10-26T23:45:00+00:00",
+        "next_utc": "2026-10-27T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-27T23:45:00+00:00",
+        "next_utc": "2026-10-28T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-28T23:45:00+00:00",
+        "next_utc": "2026-10-29T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-29T23:45:00+00:00",
+        "next_utc": "2026-10-30T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-10-30T23:45:00+00:00",
+        "next_utc": "2026-11-02T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      },
+      {
+        "previous_utc": "2026-11-02T23:45:00+00:00",
+        "next_utc": "2026-11-03T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-11-03T23:45:00+00:00",
+        "next_utc": "2026-11-04T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-11-04T23:45:00+00:00",
+        "next_utc": "2026-11-05T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-11-05T23:45:00+00:00",
+        "next_utc": "2026-11-06T01:00:00+00:00",
+        "gap_minutes": 75.0,
+        "missing_bar_estimate": 4,
+        "classification": "review_against_broker_session_hours"
+      },
+      {
+        "previous_utc": "2026-11-06T23:45:00+00:00",
+        "next_utc": "2026-11-09T01:00:00+00:00",
+        "gap_minutes": 2955.0,
+        "missing_bar_estimate": 196,
+        "classification": "likely_weekend_or_market_closure"
+      }
+    ],
+    "spread_points": {
+      "minimum": 21,
+      "median": 21.0,
+      "p95": 21.0,
+      "maximum": 26,
+      "zero_spread_count": 0,
+      "outlier_count": 0,
+      "outlier_samples": []
+    }
+  },
+  "m5_m15_comparison": {
+    "complete_m5_groups_compared": 5781,
+    "incomplete_m5_groups_count": 5,
+    "incomplete_m5_group_samples": [
+      "2026-09-28T22:00:00+00:00",
+      "2026-09-29T10:00:00+00:00",
+      "2026-09-29T11:00:00+00:00",
+      "2026-09-29T13:00:00+00:00",
+      "2026-09-29T16:15:00+00:00"
+    ],
+    "complete_groups_without_native_m15_count": 0,
+    "complete_groups_without_native_m15_samples": [],
+    "ohlc_mismatch_count": 0,
+    "ohlc_mismatch_samples": [],
+    "tick_volume_mismatch_count": 0,
+    "tick_volume_mismatch_samples": [],
+    "price_tolerance": 0.01,
+    "note": "M5 OHLC aggregation is compared with native M15 OHLC. Tick-volume differences are reported separately because broker aggregation conventions may differ."
+  },
+  "verdict": "PASS WITH WARNINGS",
+  "critical_findings": [],
+  "warnings": [
+    "M5: 67 time gaps need session-hours review",
+    "M15: 62 time gaps need session-hours review",
+    "Incomplete M5-to-M15 groups: 5"
+  ],
+  "interpretation": [
+    "A time gap is not automatically a missing candle; check broker trading sessions and daily breaks.",
+    "Spread outliers are review candidates, not automatically corrupt data.",
+    "Tick-volume sums may differ from native M15 due to broker aggregation conventions.",
+    "This audit evaluates data integrity, not strategy profitability."
+  ]
+}

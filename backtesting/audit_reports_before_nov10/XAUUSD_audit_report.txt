@@ -1,0 +1,45 @@
+XAUUSD HISTORICAL DATA QUALITY AUDIT
+================================================
+Verdict: PASS WITH WARNINGS
+Broker server: VantageMarkets-Demo
+UTC range: 2026-08-13T00:00:00+00:00 to 2026-11-09T23:59:59+00:00
+Symbol digits / point / tick size: 2 / 0.01 / 0.01
+
+M5 candles: 17,353
+M15 candles: 5,786
+
+M5 CHECKS
+Duplicates: 0
+Out of order: 0
+Invalid OHLC: 0
+Non-positive prices: 0
+Time gaps: 67
+Spread points min/median/p95/max: 21 / 21 / 21.0 / 28
+Spread outliers: 0
+
+M15 CHECKS
+Duplicates: 0
+Out of order: 0
+Invalid OHLC: 0
+Non-positive prices: 0
+Time gaps: 62
+Spread points min/median/p95/max: 21 / 21.0 / 21.0 / 26
+Spread outliers: 0
+
+M5 -> M15 CONSISTENCY
+Complete groups compared: 5781
+Incomplete groups: 5
+Missing native M15 bars: 0
+OHLC mismatches: 0
+Tick-volume mismatches: 0
+
+CRITICAL FINDINGS:
+- None detected
+
+WARNINGS:
+- M5: 67 time gaps need session-hours review
+- M15: 62 time gaps need session-hours review
+- Incomplete M5-to-M15 groups: 5
+
+NOTE: Gaps require broker-session review. The report does not establish strategy profitability.
+Files: M5 CSV, M15 CSV, JSON report, TXT report.
