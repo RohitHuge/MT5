@@ -25,12 +25,11 @@ class MT5Adapter:
     def connect(self) -> bool:
         mt5 = self._get_mt5()
         cfg = self._config
-        ok = mt5.initialize(
-            path=cfg.mt5_path,
-            login=cfg.mt5_login if cfg.mt5_login else None,
-            password=cfg.mt5_password if cfg.mt5_password else None,
-            server=cfg.mt5_server if cfg.mt5_server else None,
-        )
+
+        # Reuse the account already signed in to the local MT5 terminal.
+        # Passing empty login/password/server values can make initialize()
+        # reject the connection even though the terminal is already logged in.
+        ok = mt5.initialize(path=cfg.mt5_path)
         if not ok:
             logger.error("MT5 initialize failed: %s", mt5.last_error())
             return False
