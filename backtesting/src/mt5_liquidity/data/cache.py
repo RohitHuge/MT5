@@ -166,9 +166,19 @@ class CandleCache:
         # Verify stored content agrees with the metadata range, then return
         # only bars in the exact requested interval.
         if candles:
-            if candles[0].timestamp < cached_from or candles[-1].timestamp > cached_to:
+            timestamps = [c.timestamp for c in candles]
+            if timestamps != sorted(timestamps) or len(set(timestamps)) != len(timestamps):
+                logger.warning("Cached candle timestamps are unordered or duplicated: %s", parquet_path)
+                return None
+            if timestamps[0] < cached_from or timestamps[-1] > cached_to:
                 logger.warning("Cached candle timestamps exceed metadata range: %s", parquet_path)
                 return None
+            if timestamps[0] > cached_from or timestamps[-1] >= cached_to:
+                logger.warning("Cached candle timestamps do not cover declared metadata range: %s", parquet_path)
+                return None
+        elif meta.get("candle_count", 0) != 0:
+            logger.warning("Cache declares candles but Parquet payload is empty: %s", parquet_path)
+            return None
         requested = [c for c in candles if from_dt <= c.timestamp < to_dt]
         logger.info(
             "Loaded %d/%d candles from cache for requested interval: %s",
