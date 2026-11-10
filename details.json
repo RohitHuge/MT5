@@ -1,0 +1,17 @@
+{
+    "Terminal 1 — Demo Trade (manual open/close)": {
+        "command": "cd \"E:\\PROJECTS\\MT5\\mt5-connectivity-poc\" && .\\venv\\Scripts\\python.exe scripts/demo_trade.py",
+        "instructions": "Press Enter when you want to close the trade."
+    },
+    "Terminal 2 — Auto Trader (EMA crossover bot)": {
+        "command": "cd \"E:\\PROJECTS\\MT5\\mt5-connectivity-poc\" && .\\venv\\Scripts\\python.exe scripts/auto_trader.py",
+        "instructions": "Press Ctrl+C when you want to stop it."
+    }
+}
+
+cd "E:\PROJECTS\MT5\mt5-connectivity-poc"
+.\venv\Scripts\python.exe scripts/demo_trade.py
+
+
+cd "E:\PROJECTS\MT5\mt5-connectivity-poc"
+.\venv\Scripts\python.exe scripts/auto_trader.py

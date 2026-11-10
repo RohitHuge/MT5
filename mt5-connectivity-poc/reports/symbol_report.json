@@ -1,0 +1,17 @@
+{
+    "primary_gold_symbol": "XAUUSD",
+    "description": "Gold US Dollar",
+    "contract_size": 100.0,
+    "currency": "USD",
+    "digits": 2,
+    "point": 0.01,
+    "tick_size": 0.01,
+    "tick_value": 1.0,
+    "volume_min": 0.01,
+    "volume_max": 100.0,
+    "volume_step": 0.01,
+    "trade_mode": 4,
+    "filling_mode": 2,
+    "execution_mode": 2,
+    "note": "XAUUSD.crp is a conversion-only symbol and not for trading. Use XAUUSD for all trading operations."
+}

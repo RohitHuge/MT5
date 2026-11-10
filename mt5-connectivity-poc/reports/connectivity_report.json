@@ -1,0 +1,15 @@
+{
+    "status": "PASS",
+    "terminal": {
+        "path": "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
+        "build": 6308,
+        "connected": true,
+        "company": "MetaQuotes Ltd."
+    },
+    "broker": {
+        "name": "Vantage Markets (Pty) Ltd",
+        "server": "VantageMarkets-Demo",
+        "access_point": "AS02",
+        "ping_ms": 194.45
+    }
+}

@@ -1,0 +1,815 @@
+# TASK: Complete MT5 Installation, Python Integration and Demo Account Connectivity Validation
+
+## 1. Your Role
+
+Act as a Senior Python Developer and MT5 Integration Engineer.
+
+Your task is to configure a local Windows development environment, install MetaTrader 5 and its official Python integration, connect to an existing MT5 demo account, and perform a complete read-only connectivity test.
+
+You must execute the necessary commands, create the required Python scripts, run the tests, inspect the results and produce a final technical report.
+
+Do not merely provide instructions. Perform the work wherever system permissions allow.
+
+If a manual action is required, explain exactly what I need to do and wait for confirmation.
+
+---
+
+## 2. Project Context
+
+We are developing an automated trading POC.
+
+Our intended architecture:
+
+- Python: Primary trading application and strategy engine.
+- MetaTrader 5: Broker connectivity and trading platform.
+- MQL5: Potential future native execution bridge.
+- React: Future frontend dashboard.
+- Node.js: Future API and WebSocket backend.
+- PostgreSQL: Future trade history and analytics storage.
+- WhatsApp: Future notifications and account monitoring.
+- AI: Future market analysis and intelligent strategy assistance.
+
+For this initial task, focus ONLY on establishing and validating MT5 connectivity.
+
+Do not implement any trading strategy yet.
+
+### Environment
+
+- Operating System: Windows 11, 64-bit.
+- Python: Use an installed compatible 64-bit Python version.
+- Broker: Vantage Markets.
+- Platform: MetaTrader 5.
+- Account type: Demo.
+- Expected server from client's mobile screenshot: VantageMarkets-Live 19.
+- Account login: I will enter or configure it locally.
+- Password: I will enter it securely through MT5.
+
+Important: The server name above is based on the client's screenshot. Verify the exact server from the client's account details. Do not assume that the server name guarantees a demo account.
+
+Never print, log, commit, or expose the trading password.
+
+---
+
+# PHASE 1: ENVIRONMENT INSPECTION
+
+First inspect the machine.
+
+Execute:
+
+```powershell
+python --version
+python -c "import struct; print(struct.calcsize('P') * 8, 'bit')"
+pip --version
+where.exe python
+where.exe pip
+```
+
+Check whether MetaTrader 5 is installed.
+
+Inspect common installation paths:
+
+```text
+C:\Program Files\MetaTrader 5\terminal64.exe
+C:\Program Files (x86)\MetaTrader 5\terminal.exe
+```
+
+Also inspect the Start Menu shortcuts and installed applications if required.
+
+If MT5 is already installed, reuse the existing installation.
+
+Do not install duplicate terminal installations unnecessarily.
+
+If MT5 is missing, download it from:
+
+https://www.metatrader5.com/en/download
+
+Install the official Windows desktop application.
+
+Wait for the installation to complete.
+
+Verify that terminal64.exe exists.
+
+Record the discovered terminal executable path.
+
+---
+
+# PHASE 2: CREATE PYTHON PROJECT
+
+Create the following project structure:
+
+```text
+mt5-connectivity-poc/
+│
+├── venv/
+│
+├── config/
+│   └── settings.py
+│
+├── scripts/
+│   ├── test_installation.py
+│   ├── test_connection.py
+│   ├── account_discovery.py
+│   ├── symbol_discovery.py
+│   └── test_market_data.py
+│
+├── reports/
+│
+├── requirements.txt
+├── .gitignore
+└── README.md
+```
+
+Create the project directory and virtual environment:
+
+```powershell
+mkdir mt5-connectivity-poc
+cd mt5-connectivity-poc
+
+python -m venv venv
+
+.\venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```powershell
+python -m pip install --upgrade pip
+
+pip install MetaTrader5
+
+pip install python-dotenv
+```
+
+Create requirements.txt:
+
+```text
+MetaTrader5
+python-dotenv
+```
+
+Verify installation:
+
+```powershell
+pip show MetaTrader5
+```
+
+Create `scripts/test_installation.py`.
+
+Code:
+
+```python
+import MetaTrader5 as mt5
+
+print("MetaTrader5 Python package imported successfully")
+
+print("Package version:", mt5.__version__)
+
+print("MT5 package version:", mt5.version())
+```
+
+Run:
+
+```powershell
+python scripts/test_installation.py
+```
+
+Expected result:
+
+- Python package imports successfully.
+- Package version is displayed.
+- MT5 API version information is available.
+
+If installation fails, diagnose Python architecture, compatibility, pip and package installation before proceeding.
+
+---
+
+# PHASE 3: MT5 DESKTOP ACCOUNT LOGIN
+
+Open the installed MT5 terminal.
+
+If the terminal is already running, inspect its current account.
+
+Otherwise, launch it.
+
+The user must manually log in to the client's demo account.
+
+Login requirements:
+
+- Broker: Vantage Markets.
+- Account: Client-provided demo account.
+- Server: Verify exact server name.
+- Expected server from screenshot: VantageMarkets-Live 19.
+
+The server must be selected from the available MT5 server list.
+
+If the server is missing:
+
+1. Search for Vantage Markets through MT5's account-opening interface.
+2. Refresh the server list.
+3. Check the exact server in the client's Vantage Client Portal.
+4. Do not substitute MetaQuotes-Demo.
+5. Do not repeatedly attempt authentication against incorrect servers.
+
+Wait for the user to complete the login.
+
+Do not request credentials in source code or terminal command arguments.
+
+Do not store credentials in configuration files.
+
+Once logged in, verify:
+
+- Account appears in Navigator.
+- Connection status is active.
+- Journal does not show authentication failures.
+- Market Watch receives prices when the relevant market is open.
+
+---
+
+# PHASE 4: TEST MT5 TERMINAL CONNECTIVITY
+
+Create:
+
+`scripts/test_connection.py`
+
+Use the following code:
+
+```python
+import MetaTrader5 as mt5
+import sys
+
+print("=" * 60)
+print("MT5 TERMINAL CONNECTIVITY TEST")
+print("=" * 60)
+
+# Initialize the currently running MT5 terminal.
+
+if not mt5.initialize():
+    print("FAILED: MT5 initialization")
+
+    print("Error:", mt5.last_error())
+
+    sys.exit(1)
+
+print("\nSUCCESS: MT5 initialized")
+
+# Retrieve terminal information.
+
+terminal = mt5.terminal_info()
+
+if terminal is None:
+    print("FAILED: Cannot retrieve terminal information")
+    print(mt5.last_error())
+
+    mt5.shutdown()
+    sys.exit(1)
+
+print("\nTERMINAL INFORMATION")
+
+print("Connected:", terminal.connected)
+print("Company:", terminal.company)
+print("Name:", terminal.name)
+print("Path:", terminal.path)
+print("Data Path:", terminal.data_path)
+print("Build:", terminal.build)
+
+# Confirm broker connectivity.
+
+if not terminal.connected:
+    print("\nFAILED: Terminal is not connected to broker")
+
+    mt5.shutdown()
+    sys.exit(1)
+
+# Retrieve account information.
+
+account = mt5.account_info()
+
+if account is None:
+    print("FAILED: Cannot retrieve account information")
+    print(mt5.last_error())
+
+    mt5.shutdown()
+    sys.exit(1)
+
+print("\nSUCCESS: ACCOUNT INFORMATION AVAILABLE")
+
+print("Login:", account.login)
+print("Broker:", account.company)
+print("Server:", account.server)
+print("Currency:", account.currency)
+print("Leverage:", account.leverage)
+print("Balance:", account.balance)
+print("Equity:", account.equity)
+print("Free Margin:", account.margin_free)
+
+print("\nACCOUNT MODE")
+
+trade_modes = {
+    0: "DEMO",
+    1: "CONTEST",
+    2: "REAL"
+}
+
+margin_modes = {
+    0: "RETAIL NETTING",
+    1: "EXCHANGE",
+    2: "RETAIL HEDGING"
+}
+
+print(
+    "Account Type:",
+    trade_modes.get(account.trade_mode, "UNKNOWN")
+)
+
+print(
+    "Margin Mode:",
+    margin_modes.get(account.margin_mode, "UNKNOWN")
+)
+
+print("\nTRADING PERMISSIONS")
+
+print("Trading Allowed:", account.trade_allowed)
+print("Expert Trading Allowed:", account.trade_expert)
+
+print("\nMT5 CONNECTION TEST COMPLETED")
+
+mt5.shutdown()
+```
+
+Run:
+
+```powershell
+python scripts/test_connection.py
+```
+
+Expected results:
+
+- MT5 initialization successful.
+- Terminal connected = True.
+- Account information retrieved.
+- Broker identified.
+- Correct server identified.
+- Account type identified as DEMO.
+- Currency and leverage retrieved.
+- Margin mode identified.
+
+Important:
+
+Account information and terminal connectivity are separate checks.
+
+A successful initialize() alone does not prove that the broker connection is active.
+
+---
+
+# PHASE 5: AUTOMATIC ACCOUNT DISCOVERY
+
+Create:
+
+`scripts/account_discovery.py`
+
+Use this implementation:
+
+```python
+import MetaTrader5 as mt5
+import json
+import os
+
+if not mt5.initialize():
+    raise RuntimeError(
+        f"MT5 initialization failed: {mt5.last_error()}"
+    )
+
+try:
+    account = mt5.account_info()
+    terminal = mt5.terminal_info()
+
+    if account is None or terminal is None:
+        raise RuntimeError(
+            f"Unable to retrieve MT5 information: {mt5.last_error()}"
+        )
+
+    trade_modes = {
+        0: "DEMO",
+        1: "CONTEST",
+        2: "REAL"
+    }
+
+    margin_modes = {
+        0: "RETAIL NETTING",
+        1: "EXCHANGE",
+        2: "RETAIL HEDGING"
+    }
+
+    report = {
+        "terminal": {
+            "connected": terminal.connected,
+            "company": terminal.company,
+            "name": terminal.name,
+            "build": terminal.build,
+            "path": terminal.path
+        },
+
+        "account": {
+            "login": account.login,
+            "broker": account.company,
+            "server": account.server,
+            "type": trade_modes.get(
+                account.trade_mode, "UNKNOWN"
+            ),
+            "currency": account.currency,
+            "leverage": account.leverage,
+            "margin_mode": margin_modes.get(
+                account.margin_mode, "UNKNOWN"
+            ),
+            "balance": account.balance,
+            "equity": account.equity,
+            "margin": account.margin,
+            "free_margin": account.margin_free,
+            "trade_allowed": account.trade_allowed,
+            "trade_expert": account.trade_expert
+        }
+    }
+
+    os.makedirs("reports", exist_ok=True)
+
+    with open(
+        "reports/account_report.json",
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(report, file, indent=4)
+
+    print(json.dumps(report, indent=4))
+
+    print("\nAccount discovery completed.")
+
+finally:
+    mt5.shutdown()
+```
+
+Run:
+
+```powershell
+python scripts/account_discovery.py
+```
+
+The generated report must not contain passwords or authentication tokens.
+
+Mask the login in any externally shared report.
+
+---
+
+# PHASE 6: SYMBOL DISCOVERY
+
+We need to discover the actual Gold instrument supported by the client's broker.
+
+It may be named:
+
+- XAUUSD
+- XAUUSDm
+- GOLD
+- Another broker-specific symbol.
+
+Create:
+
+`scripts/symbol_discovery.py`
+
+Code:
+
+```python
+import MetaTrader5 as mt5
+
+if not mt5.initialize():
+    raise RuntimeError(mt5.last_error())
+
+try:
+
+    symbols = mt5.symbols_get()
+
+    if symbols is None:
+        raise RuntimeError(mt5.last_error())
+
+    print("\nGOLD SYMBOL DISCOVERY")
+
+    gold_symbols = [
+        symbol.name
+        for symbol in symbols
+        if (
+            "XAU" in symbol.name.upper()
+            or "GOLD" in symbol.name.upper()
+        )
+    ]
+
+    if not gold_symbols:
+        print("No Gold instruments discovered.")
+
+    for symbol_name in gold_symbols:
+
+        print("\n" + "=" * 50)
+
+        info = mt5.symbol_info(symbol_name)
+
+        if info is None:
+            continue
+
+        print("Symbol:", info.name)
+
+        print("Description:", info.description)
+
+        print(
+            "Contract Size:",
+            info.trade_contract_size
+        )
+
+        print("Minimum Volume:", info.volume_min)
+
+        print("Maximum Volume:", info.volume_max)
+
+        print("Volume Step:", info.volume_step)
+
+        print("Digits:", info.digits)
+
+        print("Point:", info.point)
+
+        print("Tick Size:", info.trade_tick_size)
+
+        print("Tick Value:", info.trade_tick_value)
+
+        print("Spread:", info.spread)
+
+        print("Trade Mode:", info.trade_mode)
+
+        print("Filling Mode:", info.filling_mode)
+
+        print("Execution Mode:", info.trade_exemode)
+
+finally:
+    mt5.shutdown()
+```
+
+Run:
+
+```powershell
+python scripts/symbol_discovery.py
+```
+
+The objective is to determine the exact symbol and its trading specifications.
+
+Do not assume all brokers have identical Gold contracts.
+
+---
+
+# PHASE 7: LIVE MARKET DATA TEST
+
+Create:
+
+`scripts/test_market_data.py`
+
+Code:
+
+```python
+import MetaTrader5 as mt5
+import time
+
+if not mt5.initialize():
+    raise RuntimeError(mt5.last_error())
+
+try:
+
+    symbols = mt5.symbols_get()
+
+    gold_symbols = [
+        s.name for s in symbols
+        if (
+            "XAU" in s.name.upper()
+            or "GOLD" in s.name.upper()
+        )
+    ]
+
+    if not gold_symbols:
+        print("No Gold symbols found.")
+        raise SystemExit(1)
+
+    symbol = gold_symbols[0]
+
+    print("Testing instrument:", symbol)
+
+    if not mt5.symbol_select(symbol, True):
+        raise RuntimeError(
+            f"Could not select {symbol}: {mt5.last_error()}"
+        )
+
+    print("\nLIVE MARKET DATA")
+
+    for i in range(10):
+
+        tick = mt5.symbol_info_tick(symbol)
+
+        if tick is None:
+            print("Tick unavailable:", mt5.last_error())
+
+        else:
+
+            print(
+                f"Bid: {tick.bid} | "
+                f"Ask: {tick.ask} | "
+                f"Spread: {tick.ask - tick.bid:.5f} | "
+                f"Time: {tick.time}"
+            )
+
+        time.sleep(1)
+
+    print("\nMarket data test completed.")
+
+finally:
+    mt5.shutdown()
+```
+
+Run:
+
+```powershell
+python scripts/test_market_data.py
+```
+
+Expected:
+
+- Correct Gold instrument discovered.
+- Symbol successfully selected.
+- Bid and Ask prices retrieved.
+- Tick timestamps retrieved.
+- Prices update when the market is active.
+
+Do not interpret an unchanged price during a closed market as an API failure. Check the timestamp and market session.
+
+---
+
+# PHASE 8: EXISTING POSITIONS DISCOVERY
+
+Create a read-only test to check whether the account currently has open positions.
+
+Code:
+
+```python
+import MetaTrader5 as mt5
+
+if not mt5.initialize():
+    raise RuntimeError(mt5.last_error())
+
+try:
+
+    positions = mt5.positions_get()
+
+    if positions is None:
+        raise RuntimeError(mt5.last_error())
+
+    print("OPEN POSITIONS:", len(positions))
+
+    for p in positions:
+
+        print({
+            "ticket": p.ticket,
+            "symbol": p.symbol,
+            "type": p.type,
+            "volume": p.volume,
+            "price_open": p.price_open,
+            "sl": p.sl,
+            "tp": p.tp,
+            "profit": p.profit
+        })
+
+finally:
+    mt5.shutdown()
+```
+
+This should retrieve the current positions without changing them.
+
+---
+
+# PHASE 9: FINAL VALIDATION CHECKLIST
+
+After all scripts have executed, prepare a report with the following:
+
+| Validation | Expected |
+|---|---|
+| Python installation | PASS |
+| MetaTrader5 package installation | PASS |
+| MT5 terminal found | PASS |
+| MT5 initialization | PASS |
+| Terminal connected | TRUE |
+| Account information retrieved | PASS |
+| Broker identification | Vantage Markets |
+| Server identification | Correct assigned server |
+| Account type | DEMO |
+| Currency discovered | PASS |
+| Leverage discovered | PASS |
+| Account mode discovered | PASS |
+| Gold instrument discovered | PASS |
+| Contract specifications retrieved | PASS |
+| Live tick retrieval | PASS when market is active |
+| Existing positions retrieval | PASS |
+
+Use these statuses:
+
+- PASS
+- FAIL
+- WARNING
+- NOT TESTED
+
+Never mark an untested condition as passed.
+
+---
+
+# PHASE 10: ERROR HANDLING
+
+If any test fails:
+
+1. Capture the exact error.
+2. Identify the failing phase.
+3. Inspect mt5.last_error().
+4. Inspect terminal_info().
+5. Check broker authentication.
+6. Check the server name.
+7. Check whether MT5 is connected.
+8. Check Python and MT5 installation paths.
+9. Fix the problem before proceeding.
+
+Do not repeatedly attempt logins with incorrect credentials.
+
+Do not silently ignore errors.
+
+Do not fabricate successful results.
+
+---
+
+# IMPORTANT SAFETY RESTRICTIONS
+
+This is strictly a connectivity and account-discovery task.
+
+You are NOT authorized to:
+
+- Place BUY orders.
+- Place SELL orders.
+- Modify existing positions.
+- Close existing positions.
+- Change account settings.
+- Deposit or withdraw money.
+- Enable automated trading without permission.
+- Modify broker configurations.
+- Execute any trading strategy.
+
+All scripts must be read-only.
+
+Never expose:
+- Account passwords.
+- Investor passwords.
+- Authentication tokens.
+- Unmasked credentials.
+
+Never save credentials in Git repositories.
+
+Use the already logged-in MT5 terminal for the initial connection.
+
+Do not make unnecessary account login attempts.
+
+---
+
+# FINAL DELIVERABLES
+
+At the end, provide:
+
+1. Confirmation of Python installation.
+2. Confirmation of MetaTrader5 package installation.
+3. MT5 terminal executable path.
+4. Broker name.
+5. Trading server name.
+6. Account type.
+7. Currency.
+8. Leverage.
+9. Margin mode.
+10. Actual Gold symbol.
+11. Gold contract specifications.
+12. Market data retrieval status.
+13. Existing positions retrieval status.
+14. All errors encountered and their resolutions.
+15. Final PASS/FAIL checklist.
+
+Generate:
+
+```text
+reports/
+    account_report.json
+    connectivity_report.json
+    symbol_report.json
+    final_validation_report.md
+```
+
+The JSON reports must contain no passwords or authentication secrets.
+
+At the end, summarize whether the environment is ready for the next stage: Python-based automated demo trading.
+
+Do not start the next stage without explicit user approval.
+
+**EXECUTION PRIORITY:**
+
+Perform one phase at a time, validate its output, and then continue to the next phase. If manual user interaction is required, pause and request it instead of guessing.
