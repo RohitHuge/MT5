@@ -29,10 +29,12 @@ class BacktestConfig:
     pivot_right: int = 2
     zone_tolerance_points: int = 10
 
-    # Phase 3 placeholders
+    # Phase 3
     sweep_min_points: int = 5
     mss_timeout_bars: int = 20
     retest_timeout_bars: int = 10
+    retest_band_points: int = 5   # points either side of structure level for retest band
+    sl_buffer_points: int = 5     # buffer above/below sweep extreme for stop-loss
 
     # Backtest placeholders
     risk_pct: float = 0.5
