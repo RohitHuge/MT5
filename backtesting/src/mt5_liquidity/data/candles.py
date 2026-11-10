@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 @dataclass
@@ -66,6 +66,15 @@ def aggregate_m5_to_m15(candles: list[Candle]) -> AggregationResult:
     for boundary in sorted(windows):
         group = windows[boundary]
 
+        # Validate intra-window ordering first so duplicates and out-of-order
+        # inputs receive the precise diagnostic before cadence validation.
+        for i in range(1, len(group)):
+            if group[i].timestamp <= group[i - 1].timestamp:
+                raise ValueError(
+                    f"Out-of-order M5 candles in M15 window {boundary.isoformat()}: "
+                    f"{group[i - 1].timestamp.isoformat()} followed by {group[i].timestamp.isoformat()}"
+                )
+
         # Validate exact M5 cadence, not just the number/order of bars.
         expected = [boundary + timedelta(minutes=offset) for offset in (0, 5, 10)]
         actual = [c.timestamp.astimezone(timezone.utc) for c in group]
@@ -74,14 +83,6 @@ def aggregate_m5_to_m15(candles: list[Candle]) -> AggregationResult:
                 f"M5 candles do not match expected 5-minute slots in {boundary.isoformat()}: "
                 f"expected {[t.isoformat() for t in expected]}, got {[t.isoformat() for t in actual]}"
             )
-
-        # Validate intra-window ordering
-        for i in range(1, len(group)):
-            if group[i].timestamp <= group[i - 1].timestamp:
-                raise ValueError(
-                    f"Out-of-order M5 candles in M15 window {boundary.isoformat()}: "
-                    f"{group[i - 1].timestamp.isoformat()} followed by {group[i].timestamp.isoformat()}"
-                )
 
         if len(group) == 3:
             result.append(_make_m15(group, boundary))
