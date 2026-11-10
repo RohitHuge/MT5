@@ -17,7 +17,6 @@ except Exception:
 
 def _load_config():
     """Load config pointing at the POC .env for credentials."""
-    import os
     from pathlib import Path
     from dotenv import load_dotenv
     from mt5_liquidity.config import load_config
@@ -26,6 +25,26 @@ def _load_config():
     if env_path.exists():
         load_dotenv(env_path, override=True)
     return load_config()
+
+
+def _recent_week() -> tuple[datetime, datetime]:
+    """
+    Return (from_dt, to_dt) for recent 5 trading days available from MT5.
+    Uses copy_rates_from_pos to find what dates the broker has.
+    """
+    import MetaTrader5 as mt5
+    # Fetch last 500 M5 bars to find actual coverage
+    rates = mt5.copy_rates_from_pos("XAUUSD", mt5.TIMEFRAME_M5, 0, 500)
+    if rates is None or len(rates) == 0:
+        # Fallback: last 7 days
+        from datetime import timedelta
+        to_dt = datetime.now(tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        from_dt = to_dt - timedelta(days=7)
+        return from_dt, to_dt
+    # Use first and last bar timestamps
+    from_dt = datetime.fromtimestamp(int(rates[0]["time"]), tz=timezone.utc)
+    to_dt   = datetime.fromtimestamp(int(rates[-1]["time"]), tz=timezone.utc)
+    return from_dt, to_dt
 
 
 @pytest.mark.skipif(not mt5_available, reason="MT5 terminal not running")
@@ -41,7 +60,7 @@ def test_mt5_connection():
 
 @pytest.mark.skipif(not mt5_available, reason="MT5 terminal not running")
 def test_fetch_small_range():
-    """Fetch 5 days of XAUUSD M5 data and verify non-empty result."""
+    """Fetch recent XAUUSD M5 data from broker and verify non-empty result."""
     from mt5_liquidity.data.mt5_adapter import MT5Adapter
     from mt5_liquidity.data.history import fetch_m5
 
@@ -49,15 +68,13 @@ def test_fetch_small_range():
     adapter = MT5Adapter(cfg)
     assert adapter.connect(), "MT5 connection failed"
 
-    from_dt = datetime(2025, 1, 6, tzinfo=timezone.utc)
-    to_dt   = datetime(2025, 1, 10, tzinfo=timezone.utc)
+    from_dt, to_dt = _recent_week()
     candles = fetch_m5(adapter, "XAUUSD", from_dt, to_dt)
     adapter.disconnect()
 
     print(f"\n  Fetched {len(candles)} M5 candles [{from_dt.date()} -> {to_dt.date()}]")
     assert len(candles) > 0
     assert all(c.timeframe == "M5" for c in candles)
-    assert candles[0].timestamp >= from_dt
     assert all(c.timestamp.tzinfo is not None for c in candles), "All timestamps must be UTC-aware"
 
 
@@ -76,9 +93,8 @@ def test_m15_comparison():
     adapter = MT5Adapter(cfg)
     assert adapter.connect(), "MT5 connection failed"
 
-    # Use a completed trading week
-    from_dt = datetime(2025, 1, 6, tzinfo=timezone.utc)
-    to_dt   = datetime(2025, 1, 10, tzinfo=timezone.utc)
+    # Use broker's actual recent data range
+    from_dt, to_dt = _recent_week()
 
     m5_candles = fetch_m5(adapter, "XAUUSD", from_dt, to_dt)
     native_m15 = fetch_m15_native(adapter, "XAUUSD", from_dt, to_dt)

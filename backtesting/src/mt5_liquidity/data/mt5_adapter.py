@@ -106,21 +106,26 @@ class MT5Adapter:
                 )
                 break
 
+            # MT5 returns a numpy structured array; access fields by name, not .get()
+            field_names = rates.dtype.names if hasattr(rates, "dtype") else []
+            has_tick_volume = "tick_volume" in field_names
+            has_spread = "spread" in field_names
+
             for r in rates:
-                # MT5 returns broker-local epoch seconds; fromtimestamp with tz=UTC
-                # converts the POSIX timestamp correctly regardless of broker timezone.
-                ts_utc = datetime.fromtimestamp(r["time"], tz=timezone.utc)
+                # fromtimestamp with tz=UTC converts POSIX epoch correctly
+                # regardless of broker local timezone.
+                ts_utc = datetime.fromtimestamp(int(r["time"]), tz=timezone.utc)
                 all_rates.append({
                     "timestamp": ts_utc,
                     "open": float(r["open"]),
                     "high": float(r["high"]),
                     "low": float(r["low"]),
                     "close": float(r["close"]),
-                    "volume": float(r.get("tick_volume", 0)),
-                    "spread": float(r.get("spread", 0)),
+                    "volume": float(r["tick_volume"]) if has_tick_volume else 0.0,
+                    "spread": float(r["spread"]) if has_spread else 0.0,
                 })
 
-            last_ts = datetime.fromtimestamp(rates[-1]["time"], tz=timezone.utc)
+            last_ts = datetime.fromtimestamp(int(rates[-1]["time"]), tz=timezone.utc)
             if len(rates) < CHUNK_SIZE or last_ts >= to_dt:
                 break
             chunk_start = last_ts + timedelta(seconds=1)
