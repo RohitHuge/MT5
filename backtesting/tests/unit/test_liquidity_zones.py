@@ -275,3 +275,18 @@ def test_invalidation_event_recorded_with_reason():
     inv_events = [e for e in z.events if e["type"] == "INVALIDATED"]
     assert len(inv_events) == 1
     assert "close" in inv_events[0]["detail"].lower() or "upper" in inv_events[0]["detail"].lower()
+
+
+
+def test_transitive_zone_uses_union_find_cluster_not_incremental_expansion():
+    """A-B and B-C within tolerance must join into one causally activated cluster."""
+    candles = flat_series(40, price=1000.0)
+    candles[5] = make_candle(candles[5].timestamp, 1000, 1010.00, 1000, 1000)
+    candles[15] = make_candle(candles[15].timestamp, 1000, 1010.08, 1000, 1000)
+    candles[25] = make_candle(candles[25].timestamp, 1000, 1010.16, 1000, 1000)
+    zones = _build(candles)
+    bsl = [z for z in zones if z.zone_type == ZoneType.BSL]
+    assert len(bsl) == 1
+    # Cluster only becomes known once the last pivot's right-side confirmation closes.
+    assert bsl[0].created_at_index >= max(p.confirmed_at_index for p in bsl[0].source_pivots)
+    assert len(bsl[0].source_pivots) == 3
