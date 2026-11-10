@@ -45,6 +45,15 @@ def validate_candles(candles: list[Candle], timeframe: str = "M5") -> Validation
     """
     result = ValidationResult(passed=True, candle_count=len(candles))
 
+    # Mixed or naive timestamps make ordering/gap interpretation ambiguous.
+    # Candle normally rejects naive values, but validate defensively for
+    # deserialised/externally constructed objects.
+    for i, candle in enumerate(candles):
+        ts = candle.timestamp
+        if ts.tzinfo is None or ts.utcoffset() is None:
+            result.warnings.append(f"naive timestamp at index {i}: {ts.isoformat()}")
+            result.passed = False
+
     if not candles:
         result.warnings.append("Empty candle series.")
         return result
@@ -69,10 +78,11 @@ def validate_candles(candles: list[Candle], timeframe: str = "M5") -> Validation
                     result.out_of_order.append(ts)
                     result.passed = False
             except TypeError:
-                # Mixed naive/aware — record as warning, skip ordering check
+                # Defensive guard: the series has already been marked failed.
+                result.passed = False
                 result.warnings.append(
-                    f"Cannot compare timestamps at index {i}: "
-                    f"mixed naive/aware ({prev_ts} vs {ts})"
+                    f"Cannot compare timestamps at index {i}: mixed naive/aware "
+                    f"({prev_ts} vs {ts})"
                 )
 
         # 3. OHLC invariants
