@@ -24,9 +24,7 @@ class ReportPublishError(RuntimeError):
 def _request(token: str, method: str, path: str, payload: dict | None = None) -> dict:
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     request = Request(
-        f"{GITHUB_API}{path}",
-        data=body,
-        method=method,
+        f"{GITHUB_API}{path}", data=body, method=method,
         headers={
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {token}",
@@ -81,24 +79,17 @@ def publish_report_directory(
     if not files:
         raise ReportPublishError("Report directory contains no files")
 
-    try:
-        relative = report_path.relative_to(Path.cwd().resolve())
-    except ValueError:
-        # Support invoking from the package directory or a different working directory
-        # while ensuring we only publish the expected reports tree.
-        parts = report_path.parts
-        try:
-            idx = len(parts) - 1 - list(reversed(parts)).index("reports")
-            relative = Path(*parts[idx:])
-        except ValueError as exc:
-            raise ReportPublishError("Report directory must be inside a reports directory") from exc
-
-    if relative.parts[0] != "reports":
-        # Normal CLI execution exports to backtesting/reports; normalize that known layout.
-        if "backtesting" in relative.parts:
-            relative = Path(*relative.parts[relative.parts.index("backtesting") + 1:])
-    if relative.parts[0] != "reports":
-        raise ReportPublishError("Report directory must resolve beneath backtesting/reports")
+    # The local exporter writes reports under backtesting/reports by default.
+    # Find that directory boundary without depending on the current directory.
+    parts = report_path.parts
+    reports_positions = [i for i, part in enumerate(parts) if part == "reports"]
+    if not reports_positions:
+        raise ReportPublishError("Report directory must be inside a reports directory")
+    reports_index = reports_positions[-1]
+    suffix = Path(*parts[reports_index:])
+    if len(suffix.parts) < 3:
+        raise ReportPublishError("Expected report path: reports/<symbol>/<run_id>")
+    report_root = Path(*parts[:reports_index + 1])
 
     api_repo = f"/repos/{repository}"
     ref = _request(secret, "GET", f"{api_repo}/git/ref/heads/{branch}")
@@ -109,40 +100,28 @@ def publish_report_directory(
     tree_entries = []
     for file_path in files:
         rel_file = file_path.relative_to(report_path)
-        repo_path = (Path("backtesting") / relative / rel_file).as_posix()
+        repo_path = (Path("backtesting") / suffix / rel_file).as_posix()
         if any(part in {".git", ".env", "__pycache__"} for part in rel_file.parts):
             raise ReportPublishError(f"Refusing to publish unsafe report path: {repo_path}")
         if file_path.stat().st_size > 10 * 1024 * 1024:
             raise ReportPublishError(f"Report file exceeds 10 MiB Git blob safety limit: {repo_path}")
         encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
-        blob = _request(
-            secret, "POST", f"{api_repo}/git/blobs",
-            {"content": encoded, "encoding": "base64"},
-        )
+        blob = _request(secret, "POST", f"{api_repo}/git/blobs", {
+            "content": encoded, "encoding": "base64",
+        })
         tree_entries.append({
-            "path": repo_path,
-            "mode": "100644",
-            "type": "blob",
-            "sha": blob["sha"],
+            "path": repo_path, "mode": "100644", "type": "blob", "sha": blob["sha"],
         })
 
-    tree = _request(
-        secret, "POST", f"{api_repo}/git/trees",
-        {"base_tree": base_tree_sha, "tree": tree_entries},
-    )
-    commit = _request(
-        secret, "POST", f"{api_repo}/git/commits",
-        {
-            "message": f"Add backtest report: {relative.parts[-2]}/{relative.parts[-1]}",
-            "tree": tree["sha"],
-            "parents": [parent_sha],
-        },
-    )
-    # Non-force update protects concurrent changes to main. If main moved, the
-    # local bundle remains intact and the next run can be published separately.
-    updated = _request(
-        secret, "PATCH", f"{api_repo}/git/refs/heads/{branch}",
-        {"sha": commit["sha"], "force": False},
-    )
+    tree = _request(secret, "POST", f"{api_repo}/git/trees", {
+        "base_tree": base_tree_sha, "tree": tree_entries,
+    })
+    commit = _request(secret, "POST", f"{api_repo}/git/commits", {
+        "message": f"Add backtest report: {suffix.parts[-2]}/{suffix.parts[-1]}",
+        "tree": tree["sha"], "parents": [parent_sha],
+    })
+    _request(secret, "PATCH", f"{api_repo}/git/refs/heads/{branch}", {
+        "sha": commit["sha"], "force": False,
+    })
     logger.info("Published report to %s/%s at commit %s", repository, branch, commit["sha"])
     return commit["sha"]

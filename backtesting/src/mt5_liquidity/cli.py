@@ -227,6 +227,19 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         return 1
 
     print(f"  Report saved      : {report_dir}")
+
+    # Publishing is best-effort: failures never remove the local report.
+    from .reporting.github_publisher import ReportPublishError, publish_report_directory
+    try:
+        commit_sha = publish_report_directory(report_dir)
+    except ReportPublishError as exc:
+        logging.getLogger(__name__).warning("GitHub report publish skipped/failed: %s", exc)
+        print(f"  GitHub publish    : FAILED (local report retained) — {exc}")
+    except Exception:
+        logging.getLogger(__name__).exception("Unexpected error while publishing report to GitHub")
+        print("  GitHub publish    : FAILED (local report retained); see log above")
+    else:
+        print(f"  GitHub publish    : SUCCESS (main, commit {commit_sha[:12]})")
     return 0
 
 
