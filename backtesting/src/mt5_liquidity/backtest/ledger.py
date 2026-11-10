@@ -30,7 +30,9 @@ class LedgerStats:
     gross_loss: float            # sum of negative gross pnl_usd (negative value)
     total_commission: float      # sum of all commission_usd across all trades
     net_pnl: float               # gross_profit + gross_loss - total_commission
-    profit_factor: float         # gross_profit / abs(gross_loss); inf if no losses
+    profit_factor: float         # backward-compatible alias for gross_profit_factor
+    gross_profit_factor: float   # gross profit / absolute gross loss
+    net_profit_factor: float     # net winning P&L / absolute net losing P&L
     avg_win: float               # average net P&L of winning trades
     avg_loss: float              # average net P&L of losing trades (negative)
     max_drawdown_usd: float      # peak-to-trough on equity curve
@@ -57,7 +59,8 @@ class TradeLedger:
                 total_trades=0, winners=0, losers=0,
                 win_rate=0.0, gross_profit=0.0, gross_loss=0.0,
                 total_commission=0.0, net_pnl=0.0,
-                profit_factor=0.0, avg_win=0.0, avg_loss=0.0,
+                profit_factor=0.0, gross_profit_factor=0.0, net_profit_factor=0.0,
+                avg_win=0.0, avg_loss=0.0,
                 max_drawdown_usd=0.0, max_drawdown_pct=0.0,
                 final_equity=self.initial_equity,
             )
@@ -74,9 +77,15 @@ class TradeLedger:
             else float("inf")
         )
 
-        # Winners/losers classified by net P&L
+        # Winners/losers and the net PF are calculated after commissions.
         wins   = [t for t in trades if t.net_pnl_usd > 0]
         losses = [t for t in trades if t.net_pnl_usd <= 0]
+        net_wins = sum(t.net_pnl_usd for t in wins)
+        net_losses = sum(t.net_pnl_usd for t in losses)
+        net_profit_factor = (
+            net_wins / abs(net_losses) if net_losses < 0
+            else (float("inf") if net_wins > 0 else 0.0)
+        )
 
         avg_win  = sum(t.net_pnl_usd for t in wins)   / len(wins)   if wins   else 0.0
         avg_loss = sum(t.net_pnl_usd for t in losses) / len(losses) if losses else 0.0
@@ -118,6 +127,8 @@ class TradeLedger:
             total_commission=round(total_commission, 2),
             net_pnl=round(net_pnl, 2),
             profit_factor=round(profit_factor, 4) if profit_factor != float("inf") else profit_factor,
+            gross_profit_factor=round(profit_factor, 4) if profit_factor != float("inf") else profit_factor,
+            net_profit_factor=round(net_profit_factor, 4) if net_profit_factor != float("inf") else net_profit_factor,
             avg_win=round(avg_win, 2),
             avg_loss=round(avg_loss, 2),
             max_drawdown_usd=round(max_dd_usd, 2),
