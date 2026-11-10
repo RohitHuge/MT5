@@ -66,6 +66,15 @@ def aggregate_m5_to_m15(candles: list[Candle]) -> AggregationResult:
     for boundary in sorted(windows):
         group = windows[boundary]
 
+        # Validate exact M5 cadence, not just the number/order of bars.
+        expected = [boundary + timedelta(minutes=offset) for offset in (0, 5, 10)]
+        actual = [c.timestamp.astimezone(timezone.utc) for c in group]
+        if len(group) == 3 and actual != expected:
+            raise ValueError(
+                f"M5 candles do not match expected 5-minute slots in {boundary.isoformat()}: "
+                f"expected {[t.isoformat() for t in expected]}, got {[t.isoformat() for t in actual]}"
+            )
+
         # Validate intra-window ordering
         for i in range(1, len(group)):
             if group[i].timestamp <= group[i - 1].timestamp:
