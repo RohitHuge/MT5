@@ -137,7 +137,13 @@ def run_backtest(
     )
 
     entry_setups = [s for s in all_setups if s.state == SetupState.ENTRY_READY]
-    entry_setups.sort(key=lambda s: s.retest.rejection_candle_index)
+    # Stable ordering and de-duplication prevent duplicate setup IDs from being
+    # admitted more than once in a single simulation.
+    unique_setups: dict[str, Setup] = {}
+    for setup in sorted(entry_setups, key=lambda s: (s.retest.rejection_candle_index, s.setup_id)):
+        unique_setups.setdefault(setup.setup_id, setup)
+    entry_setups = list(unique_setups.values())
+    entry_setups.sort(key=lambda s: (s.retest.rejection_candle_index, s.setup_id))
 
     # Map fill_bar_index → list[Setup]
     fill_bar_map: dict[int, list[Setup]] = {}
@@ -164,6 +170,9 @@ def run_backtest(
         "force_closed": 0,
     }
     rejected_sizings: list[SizingResult] = []
+    # Policy: at most one successful entry attempt per M5 candle, even if it
+    # immediately hits SL/TP. This prevents sequential same-candle replacement.
+    candle_entry_consumed: set[int] = set()
 
     for idx, candle in enumerate(m5_candles):
         candle_date = candle.timestamp.date()
@@ -194,6 +203,14 @@ def run_backtest(
 
         # 2. Attempt fills for setups whose fill bar is this candle
         for setup in fill_bar_map.get(idx, []):
+            # A candle can admit only one successful entry attempt. This is a
+            # deterministic OHLC limitation: intrabar ordering between signals
+            # is not available, so later same-candle candidates are skipped.
+            if idx in candle_entry_consumed:
+                counters["skipped_max_pos"] += 1
+                logger.debug("Skipped %s — one-entry-per-candle policy", setup.setup_id)
+                continue
+
             # --- guard: max simultaneous positions ---
             if len(open_positions) >= config.max_positions:
                 counters["skipped_max_pos"] += 1
@@ -230,6 +247,26 @@ def run_backtest(
                 point,
             )
 
+            # A gap can place the executable fill beyond the intended stop.
+            # Such a trade is already invalid at entry and must not be treated
+            # as a profitable stop-out caused by evaluating the full candle.
+            invalid_stop_side = (
+                (setup.direction == "BUY" and setup.stop_loss_price >= actual_fill_price)
+                or (setup.direction == "SELL" and setup.stop_loss_price <= actual_fill_price)
+            )
+            if invalid_stop_side:
+                rejected = SizingResult(
+                    lots=0.0,
+                    risk_amount=equity * config.risk_pct / 100.0,
+                    sl_points=abs(actual_fill_price - setup.stop_loss_price) / point,
+                    value_per_point_per_lot=(tick_val / tick_size) * point,
+                    rejection_reason="Stop-loss is on the wrong side of executable fill (gap through stop)",
+                )
+                counters["skipped_sizing"] += 1
+                rejected_sizings.append(rejected)
+                logger.warning("Skipped %s — %s", setup.setup_id, rejected.rejection_reason)
+                continue
+
             # --- size position using actual fill price (not signal_price) ---
             sizing = calculate_position_size(
                 signal_price=actual_fill_price,      # Fix 1: use fill price
@@ -242,6 +279,8 @@ def run_backtest(
                 tick_value=tick_val,
                 tick_size=tick_size,
                 point=point,
+                min_stop_distance_points=config.min_stop_distance_points,
+                max_lots_per_trade=config.max_lots_per_trade,
             )
             if sizing.rejection_reason is not None:
                 counters["skipped_sizing"] += 1
@@ -274,6 +313,7 @@ def run_backtest(
                 spread_points=config.spread_points,   # Fix 3: stored for SELL ask-side exits
             )
             counters["trades_opened"] += 1
+            candle_entry_consumed.add(idx)
             logger.info(
                 "Opened %s %s fill=%.2f sl=%.2f tp=%.2f lots=%.2f",
                 fill.setup_id, fill.direction, fill.fill_price,
