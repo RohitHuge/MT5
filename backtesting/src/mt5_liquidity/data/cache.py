@@ -130,25 +130,51 @@ class CandleCache:
             )
             return None
 
-        # Load parquet
-        df = pd.read_parquet(parquet_path)
-        candles: list[Candle] = []
-        for _, row in df.iterrows():
-            ts = datetime.fromisoformat(str(row["timestamp"]))
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            candles.append(Candle(
-                timestamp=ts,
-                open=float(row["open"]),
-                high=float(row["high"]),
-                low=float(row["low"]),
-                close=float(row["close"]),
-                volume=float(row.get("volume", 0)),
-                spread=float(row.get("spread", 0)),
-                timeframe=str(row.get("timeframe", timeframe)),
-            ))
-        logger.info("Loaded %d candles from cache: %s", len(candles), parquet_path)
-        return candles
+        # Load and validate the Parquet payload. A corrupt or mismatched cache
+        # is a cache miss, never a source of silently incorrect historical data.
+        try:
+            df = pd.read_parquet(parquet_path)
+            required = {"timestamp", "open", "high", "low", "close"}
+            if not required.issubset(df.columns):
+                logger.warning("Cache schema is missing required columns: %s", required - set(df.columns))
+                return None
+
+            candles: list[Candle] = []
+            for _, row in df.iterrows():
+                ts = datetime.fromisoformat(str(row["timestamp"]))
+                candles.append(Candle(
+                    timestamp=ts,
+                    open=float(row["open"]),
+                    high=float(row["high"]),
+                    low=float(row["low"]),
+                    close=float(row["close"]),
+                    volume=float(row.get("volume", 0)),
+                    spread=float(row.get("spread", 0)),
+                    timeframe=str(row.get("timeframe", timeframe)),
+                ))
+        except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
+            logger.warning("Invalid or unreadable Parquet cache %s: %s", parquet_path, exc)
+            return None
+
+        if len(candles) != meta.get("candle_count"):
+            logger.warning(
+                "Cache candle count mismatch: metadata=%s parquet=%s",
+                meta.get("candle_count"), len(candles),
+            )
+            return None
+
+        # Verify stored content agrees with the metadata range, then return
+        # only bars in the exact requested interval.
+        if candles:
+            if candles[0].timestamp < cached_from or candles[-1].timestamp > cached_to:
+                logger.warning("Cached candle timestamps exceed metadata range: %s", parquet_path)
+                return None
+        requested = [c for c in candles if from_dt <= c.timestamp < to_dt]
+        logger.info(
+            "Loaded %d/%d candles from cache for requested interval: %s",
+            len(requested), len(candles), parquet_path,
+        )
+        return requested
 
     def refresh(self, symbol: str, timeframe: str) -> int:
         """
