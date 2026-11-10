@@ -208,8 +208,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     if sym_meta is None:
         print(
             f"ERROR: Could not retrieve symbol metadata for {args.symbol}. "
-            "Start the MT5 terminal and ensure the symbol is available, "
-            "or supply metadata via --point / --tick-value etc. (see --help).",
+            "Start MT5 with the selected symbol, or provide all six manual metadata flags.",
             file=sys.stderr,
         )
         return 1
