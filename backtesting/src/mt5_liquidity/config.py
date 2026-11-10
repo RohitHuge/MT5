@@ -45,6 +45,9 @@ class BacktestConfig:
     slippage_points: int = 3
     max_daily_loss_pct: float = 3.0
     initial_equity: float = 10_000.0
+    # Execution safety: reject stops that are too close and cap strategy volume.
+    min_stop_distance_points: float = 5.0
+    max_lots_per_trade: float = 1.0
 
 
 def load_config(env_path: str | None = None) -> BacktestConfig:
