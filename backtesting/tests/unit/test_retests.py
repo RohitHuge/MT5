@@ -76,7 +76,7 @@ def test_bearish_retest_detected():
     assert result.direction == "BEARISH"
     assert result.rejection_candle_index == 12
     assert result.structure_level == pytest.approx(995.0)
-    assert result.entry_price == pytest.approx(994.60)
+    assert result.signal_price == pytest.approx(994.60)
     assert result.bars_after_mss == 2  # 12 - 10 = 2
 
 
@@ -101,7 +101,7 @@ def test_bullish_retest_detected():
     assert result is not None
     assert result.direction == "BULLISH"
     assert result.rejection_candle_index == 13
-    assert result.entry_price == pytest.approx(1005.40)
+    assert result.signal_price == pytest.approx(1005.40)
 
 
 def test_retest_timeout_expires():
@@ -142,8 +142,8 @@ def test_no_rejection_no_signal():
     assert result is None
 
 
-def test_entry_price_is_rejection_close():
-    """entry_price must equal the rejection candle's close price."""
+def test_signal_price_equals_rejection_close():
+    """signal_price must equal the rejection candle's close price."""
     mss = _bearish_mss(break_candle_index=10, pivot_price=995.0)
     candles = [_candle(i, 994.0, 994.5, 993.5, 994.0) for i in range(25)]
     close_price = 994.37
@@ -158,5 +158,6 @@ def test_entry_price_is_rejection_close():
         point=POINT,
     )
     assert result is not None
-    assert result.entry_price == pytest.approx(close_price)
+    assert result.signal_price == pytest.approx(close_price)
     assert result.rejection_candle_close == pytest.approx(close_price)
+    assert not hasattr(result, "entry_price"), "entry_price must not exist; use signal_price"

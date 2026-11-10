@@ -1,9 +1,10 @@
 """Setup state machine: sweep → MSS → retest → ENTRY_READY. No MT5 imports."""
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 
 from .market_structure import MSSSignal, detect_mss
@@ -41,7 +42,7 @@ class Setup:
     retest: RetestSignal | None = None
     state: SetupState = SetupState.SWEEP_CONFIRMED
     events: list[SetupEvent] = field(default_factory=list)
-    entry_price: float | None = None
+    signal_price: float | None = None
     stop_loss_price: float | None = None
     sl_buffer_points: int = 5
 
@@ -67,12 +68,16 @@ class Setup:
 
 def _find_m5_index_after_m15_close(m5_candles: list, m15_sweep_ts: datetime) -> int:
     """
-    Return the index of the first M5 candle whose timestamp is STRICTLY AFTER
-    the M15 sweep candle's timestamp (i.e. the first M5 bar opened after the
-    sweep candle closed).  Returns len(m5_candles) if none found.
+    Return the index of the first M5 candle whose open timestamp is at or after
+    the M15 sweep candle's CLOSE time (m15_sweep_ts + 15 min).
+
+    MT5 timestamps are open times. A sweep candle that opens at T closes at T+15min.
+    M5 candles that open before T+15min overlap the unfinished sweep bar and must
+    not be included in the MSS search.  Returns len(m5_candles) if none found.
     """
+    m15_close_time = m15_sweep_ts + timedelta(minutes=15)
     for i, c in enumerate(m5_candles):
-        if c.timestamp > m15_sweep_ts:
+        if c.timestamp >= m15_close_time:
             return i
     return len(m5_candles)
 
@@ -104,6 +109,10 @@ def run_pipeline(
     """
     sl_buf = getattr(config, "sl_buffer_points", 5)
     retest_band_pts = getattr(config, "retest_band_points", 5)
+
+    # Deep-copy zones so caller's objects are not mutated; calling run_pipeline
+    # twice with the same zones list must return the same result.
+    zones = copy.deepcopy(zones)
 
     sweeps = detect_sweeps(
         m15_candles=m15_candles,
@@ -226,16 +235,16 @@ def run_pipeline(
             continue
 
         setup.retest = retest
-        setup.entry_price = retest.entry_price
+        setup.signal_price = retest.signal_price
         setup.transition(
             SetupState.ENTRY_READY,
             retest.rejection_candle_ts,
             retest.rejection_candle_index,
             (
                 f"{retest.direction} rejection at {retest.rejection_candle_close}; "
-                f"entry={retest.entry_price}, sl={sl}"
+                f"signal={retest.signal_price}, sl={sl}"
             ),
-            price=retest.entry_price,
+            price=retest.signal_price,
         )
 
         setups.append(setup)

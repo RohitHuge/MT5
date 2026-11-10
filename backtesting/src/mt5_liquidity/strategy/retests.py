@@ -21,7 +21,7 @@ class RetestSignal:
     rejection_candle_ts: datetime
     rejection_candle_close: float
     rejection_candle_open: float
-    entry_price: float           # rejection_candle.close — market order at next tick
+    signal_price: float          # rejection_candle.close — Phase 4 will determine actual fill
     bars_after_mss: int
 
 
@@ -89,7 +89,7 @@ def detect_retest(
                     rejection_candle_ts=candle.timestamp,
                     rejection_candle_close=candle.close,
                     rejection_candle_open=candle.open,
-                    entry_price=candle.close,
+                    signal_price=candle.close,
                     bars_after_mss=bars_after,
                 )
 
@@ -111,7 +111,7 @@ def detect_retest(
                     rejection_candle_ts=candle.timestamp,
                     rejection_candle_close=candle.close,
                     rejection_candle_open=candle.open,
-                    entry_price=candle.close,
+                    signal_price=candle.close,
                     bars_after_mss=bars_after,
                 )
 

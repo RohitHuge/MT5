@@ -56,9 +56,20 @@ def detect_sweeps(
     # Zones pre-swept by build_zones already have status=SWEPT + sweep_evidence.
     # Emit a SweepSignal for each so run_pipeline can process them, then the
     # main replay loop skips them (status != ACTIVE).
+    # Apply the same min_sweep_points distance rule as the live path.
     for zone in zones:
         if zone.status == ZoneStatus.SWEPT and zone.sweep_evidence is not None:
             ev = zone.sweep_evidence
+            if zone.zone_type == ZoneType.BSL:
+                distance = ev.wick_extreme - zone.upper
+            else:
+                distance = zone.lower - ev.wick_extreme
+            if distance < min_dist:
+                logger.debug(
+                    "Pre-swept %s zone %s rejected: distance %.5f < min %.5f",
+                    zone.zone_type.value, zone.zone_id, distance, min_dist,
+                )
+                continue
             signals.append(SweepSignal(
                 zone_id=zone.zone_id,
                 zone_type=zone.zone_type,
