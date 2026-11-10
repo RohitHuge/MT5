@@ -306,3 +306,20 @@ def test_unrealized_pnl_sell_includes_spread():
     from mt5_liquidity.data.candles import Candle
     candle = Candle(timestamp=BASE, open=2000.0, high=2005.0, low=1998.0, close=2005.0)
     assert pos.unrealized_pnl(candle) == pytest.approx(-5.10)
+
+
+def test_entry_candle_ambiguous_buy_bar_uses_stop_first():
+    pos = _pos("BUY", fill_price=2000.0, sl=1990.0, tp=2020.0)
+    candle = _candle(2000.0, 2025.0, 1985.0, 2005.0)
+    status, close_price = pos.check_entry_candle(candle)
+    assert status == PositionStatus.HIT_SL
+    assert close_price == pytest.approx(1990.0)
+
+
+def test_entry_candle_ambiguous_sell_bar_uses_stop_first_with_spread():
+    pos = OpenPosition(fill=_fill("SELL", 2000.0, 2010.0, 1980.0),
+                       value_per_point_per_lot=VPP, point=POINT, spread_points=2)
+    candle = _candle(2000.0, 2011.0, 1978.0, 2000.0)
+    status, close_price = pos.check_entry_candle(candle)
+    assert status == PositionStatus.HIT_SL
+    assert close_price == pytest.approx(2010.0)
