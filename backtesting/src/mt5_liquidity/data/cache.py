@@ -1,4 +1,4 @@
-"""Parquet-based candle cache with JSON metadata sidecars."""
+"""Parquet-based candle cache with JSON metadata sidecars and integrity validation."""
 from __future__ import annotations
 
 import json
@@ -71,15 +71,66 @@ class CandleCache:
         from_dt: datetime,
         to_dt: datetime,
     ) -> list[Candle] | None:
-        """Return cached candles if the parquet file exists, else None."""
+        """
+        Return cached candles if the Parquet file exists and metadata is valid.
+
+        Validation checks (returns None if any fail):
+        1. Parquet file and JSON sidecar both exist.
+        2. Cached symbol matches requested symbol.
+        3. Cached timeframe matches requested timeframe.
+        4. Cached from_dt <= requested from_dt AND cached to_dt >= requested to_dt
+           (cached range must fully cover the requested range).
+        """
         import pandas as pd
 
         base = _fname(symbol, timeframe, from_dt, to_dt)
         parquet_path = self._dir / f"{base}.parquet"
+        meta_path = self._dir / f"{base}.json"
 
         if not parquet_path.exists():
+            logger.debug("Cache miss (no parquet): %s", parquet_path)
             return None
 
+        # Validate metadata sidecar
+        if not meta_path.exists():
+            logger.warning("Cache parquet exists but no metadata sidecar: %s", meta_path)
+            return None
+
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Cannot read cache metadata %s: %s", meta_path, e)
+            return None
+
+        if meta.get("symbol") != symbol:
+            logger.debug("Cache symbol mismatch: got %s, want %s", meta.get("symbol"), symbol)
+            return None
+
+        if meta.get("timeframe") != timeframe:
+            logger.debug("Cache timeframe mismatch: got %s, want %s", meta.get("timeframe"), timeframe)
+            return None
+
+        try:
+            cached_from = datetime.fromisoformat(meta["from_dt"])
+            cached_to = datetime.fromisoformat(meta["to_dt"])
+        except (KeyError, ValueError) as e:
+            logger.warning("Invalid from_dt/to_dt in cache metadata: %s", e)
+            return None
+
+        # Ensure timezone-aware for comparison
+        if cached_from.tzinfo is None:
+            cached_from = cached_from.replace(tzinfo=timezone.utc)
+        if cached_to.tzinfo is None:
+            cached_to = cached_to.replace(tzinfo=timezone.utc)
+
+        if cached_from > from_dt or cached_to < to_dt:
+            logger.debug(
+                "Cache range [%s, %s] does not cover requested [%s, %s]",
+                cached_from, cached_to, from_dt, to_dt,
+            )
+            return None
+
+        # Load parquet
         df = pd.read_parquet(parquet_path)
         candles: list[Candle] = []
         for _, row in df.iterrows():
@@ -98,6 +149,22 @@ class CandleCache:
             ))
         logger.info("Loaded %d candles from cache: %s", len(candles), parquet_path)
         return candles
+
+    def refresh(self, symbol: str, timeframe: str) -> int:
+        """
+        Delete all Parquet and JSON cache files for the given symbol+timeframe.
+        Returns the number of file pairs deleted.
+        Forces the next load() call to return None.
+        """
+        pattern = f"{symbol}_{timeframe}_*.parquet"
+        deleted = 0
+        for parquet_path in list(self._dir.glob(pattern)):
+            meta_path = parquet_path.with_suffix(".json")
+            parquet_path.unlink(missing_ok=True)
+            meta_path.unlink(missing_ok=True)
+            deleted += 1
+            logger.info("Refreshed (deleted) cache: %s", parquet_path.stem)
+        return deleted
 
     def metadata(self, symbol: str, timeframe: str) -> dict | None:
         """Return metadata for the most-recent cached file matching symbol+timeframe."""

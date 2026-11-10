@@ -70,12 +70,17 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         val_m5 = validate_candles(m5, "M5")
 
         # Derived M15
-        m15_derived = aggregate_m5_to_m15(m5)
+        agg_result = aggregate_m5_to_m15(m5)
+        m15_derived = agg_result.candles
+        if agg_result.incomplete_windows:
+            print(f"  Warning: {len(agg_result.incomplete_windows)} incomplete M15 window(s) detected.")
+            for w in agg_result.incomplete_windows[:5]:
+                print(f"    {w['window_start'].isoformat()} — expected 3, got {w['got']}")
         val_m15 = validate_candles(m15_derived, "M15")
 
         # Native M15 comparison
         m15_native = fetch_m15_native(adapter, args.symbol, from_dt, to_dt)
-        comparison = compare_m15(m15_derived, m15_native)
+        comparison = compare_m15(m15_derived, m15_native)  # accepts list[Candle]
 
         print_data_summary(m5, val_m5, comparison)
 

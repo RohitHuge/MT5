@@ -107,7 +107,9 @@ class MT5Adapter:
                 break
 
             for r in rates:
-                ts_utc = datetime.utcfromtimestamp(r["time"]).replace(tzinfo=timezone.utc)
+                # MT5 returns broker-local epoch seconds; fromtimestamp with tz=UTC
+                # converts the POSIX timestamp correctly regardless of broker timezone.
+                ts_utc = datetime.fromtimestamp(r["time"], tz=timezone.utc)
                 all_rates.append({
                     "timestamp": ts_utc,
                     "open": float(r["open"]),
@@ -118,7 +120,7 @@ class MT5Adapter:
                     "spread": float(r.get("spread", 0)),
                 })
 
-            last_ts = datetime.utcfromtimestamp(rates[-1]["time"]).replace(tzinfo=timezone.utc)
+            last_ts = datetime.fromtimestamp(rates[-1]["time"], tz=timezone.utc)
             if len(rates) < CHUNK_SIZE or last_ts >= to_dt:
                 break
             chunk_start = last_ts + timedelta(seconds=1)

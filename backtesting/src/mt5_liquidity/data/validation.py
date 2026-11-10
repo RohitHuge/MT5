@@ -77,6 +77,10 @@ def validate_candles(candles: list[Candle], timeframe: str = "M5") -> Validation
             result.ohlc_violations.append((ts, f"High {c.high} < Low {c.low}"))
             result.passed = False
 
+        # 3b. Timezone warning
+        if c.timestamp.tzinfo is None:
+            result.warnings.append(f"naive timestamp at {ts.isoformat()}")
+
         # 4. Gap detection
         if i > 0 and expected_interval is not None:
             prev_ts = candles[i - 1].timestamp

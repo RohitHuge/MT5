@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 @dataclass
 class Candle:
-    timestamp: datetime  # UTC
+    timestamp: datetime  # must be UTC-aware
     open: float
     high: float
     low: float
@@ -18,8 +18,17 @@ class Candle:
 
     def __post_init__(self) -> None:
         if self.timestamp.tzinfo is None:
-            # Treat naive datetimes as UTC
-            self.timestamp = self.timestamp.replace(tzinfo=timezone.utc)
+            raise ValueError(
+                f"Candle timestamp must be UTC-aware, got naive datetime: {self.timestamp}. "
+                "Use datetime(..., tzinfo=timezone.utc) or datetime.fromtimestamp(ts, tz=timezone.utc)."
+            )
+
+
+@dataclass
+class AggregationResult:
+    """Return type for aggregate_m5_to_m15."""
+    candles: list[Candle]
+    incomplete_windows: list[dict]  # windows with < 3 M5 candles
 
 
 def _m15_boundary(ts: datetime) -> datetime:
@@ -28,42 +37,59 @@ def _m15_boundary(ts: datetime) -> datetime:
     return ts.replace(minute=minute_floor, second=0, microsecond=0)
 
 
-def aggregate_m5_to_m15(candles: list[Candle]) -> list[Candle]:
+def aggregate_m5_to_m15(candles: list[Candle]) -> AggregationResult:
     """
     Group M5 candles into M15 candles by aligning on 15-minute boundaries.
-    Only emit complete groups of exactly 3 consecutive M5 candles.
+
+    Rules:
+    - Only group candles whose timestamps fall in the SAME 15-min boundary window.
+    - A complete window has exactly 3 M5 candles.
+    - Incomplete windows (< 3 candles) are reported in AggregationResult.incomplete_windows,
+      NOT silently dropped.
+    - Candles within a window must be chronologically ordered; raises ValueError otherwise.
+
     M15 OHLC: open=first, high=max, low=min, close=last.
     volume=sum, spread=max (conservative).
+    timestamp = the 15-minute boundary (floor).
     """
     if not candles:
-        return []
+        return AggregationResult(candles=[], incomplete_windows=[])
 
     result: list[Candle] = []
-    group: list[Candle] = []
-    current_boundary: datetime | None = None
+    incomplete: list[dict] = []
+    windows: dict[datetime, list[Candle]] = {}
 
     for c in candles:
         boundary = _m15_boundary(c.timestamp)
-        if current_boundary is None:
-            current_boundary = boundary
+        windows.setdefault(boundary, []).append(c)
 
-        if boundary != current_boundary:
-            if len(group) == 3:
-                result.append(_make_m15(group))
-            group = []
-            current_boundary = boundary
+    for boundary in sorted(windows):
+        group = windows[boundary]
 
-        group.append(c)
+        # Validate intra-window ordering
+        for i in range(1, len(group)):
+            if group[i].timestamp <= group[i - 1].timestamp:
+                raise ValueError(
+                    f"Out-of-order M5 candles in M15 window {boundary.isoformat()}: "
+                    f"{group[i - 1].timestamp.isoformat()} followed by {group[i].timestamp.isoformat()}"
+                )
 
-    if len(group) == 3:
-        result.append(_make_m15(group))
+        if len(group) == 3:
+            result.append(_make_m15(group, boundary))
+        else:
+            incomplete.append({
+                "window_start": boundary,
+                "expected": 3,
+                "got": len(group),
+                "candles": group,
+            })
 
-    return result
+    return AggregationResult(candles=result, incomplete_windows=incomplete)
 
 
-def _make_m15(group: list[Candle]) -> Candle:
+def _make_m15(group: list[Candle], boundary: datetime) -> Candle:
     return Candle(
-        timestamp=group[0].timestamp,
+        timestamp=boundary,
         open=group[0].open,
         high=max(c.high for c in group),
         low=min(c.low for c in group),

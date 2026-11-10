@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from .candles import Candle, aggregate_m5_to_m15
+from .candles import AggregationResult, Candle, aggregate_m5_to_m15
 from .mt5_adapter import MT5Adapter
 
 logger = logging.getLogger(__name__)
@@ -50,11 +50,14 @@ def fetch_m15_native(
     return _rates_to_candles(rates, "M15")
 
 
-def compare_m15(derived: list[Candle], native: list[Candle]) -> dict:
+def compare_m15(derived: list[Candle] | AggregationResult, native: list[Candle]) -> dict:
     """
     Compare derived M15 (from M5 aggregation) vs native MT5 M15.
+    Accepts either a list[Candle] or AggregationResult from aggregate_m5_to_m15.
     Returns matched count, mismatches list, and coverage percentage.
     """
+    if isinstance(derived, AggregationResult):
+        derived = derived.candles
     native_map = {c.timestamp: c for c in native}
     matched = 0
     mismatched: list[dict] = []

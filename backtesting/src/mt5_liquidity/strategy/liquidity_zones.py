@@ -5,8 +5,8 @@ import logging
 from datetime import datetime
 
 from ..data.candles import Candle
-from .models import LiquidityZone, PivotType, ZoneStatus, ZoneType
-from .swings import Pivot, get_pivots_known_at
+from .models import LiquidityZone, Pivot, PivotType, SweepEvidence, ZoneStatus, ZoneType
+from .swings import get_pivots_known_at
 
 logger = logging.getLogger(__name__)
 
@@ -15,15 +15,45 @@ def _zone_id(zone_type: ZoneType, created_at_index: int) -> str:
     return f"{zone_type.value}_{created_at_index:06d}"
 
 
-def _pivots_within_tolerance(
-    p_price: float,
-    zone: LiquidityZone,
-    tolerance: float,
-) -> bool:
-    """True if p_price is within tolerance of the zone's existing cluster."""
-    return abs(p_price - zone.lower + tolerance) <= 2 * tolerance or (
-        zone.lower - tolerance <= p_price <= zone.upper + tolerance
-    )
+# ── Union-Find for transitive clustering ─────────────────────────────────────
+
+class _UnionFind:
+    def __init__(self) -> None:
+        self._parent: dict[int, int] = {}
+
+    def find(self, x: int) -> int:
+        self._parent.setdefault(x, x)
+        if self._parent[x] != x:
+            self._parent[x] = self.find(self._parent[x])
+        return self._parent[x]
+
+    def union(self, x: int, y: int) -> None:
+        self._parent[self.find(x)] = self.find(y)
+
+    def groups(self, items: list[int]) -> dict[int, list[int]]:
+        result: dict[int, list[int]] = {}
+        for i in items:
+            root = self.find(i)
+            result.setdefault(root, []).append(i)
+        return result
+
+
+def _cluster_pivots(pivots: list[Pivot], tolerance: float) -> list[list[Pivot]]:
+    """
+    Group pivots into transitive clusters using single-linkage (union-find).
+    Two pivots merge if |p1.price - p2.price| <= tolerance.
+    A, B, C merge if A-B <= tol and B-C <= tol, even if A-C > tol.
+    """
+    uf = _UnionFind()
+    indices = list(range(len(pivots)))
+    for i in indices:
+        uf.find(i)  # register
+    for i in range(len(pivots)):
+        for j in range(i + 1, len(pivots)):
+            if abs(pivots[i].price - pivots[j].price) <= tolerance:
+                uf.union(i, j)
+    groups = uf.groups(indices)
+    return [[pivots[k] for k in sorted(members)] for members in groups.values()]
 
 
 def build_zones(
@@ -36,15 +66,29 @@ def build_zones(
     Build BSL and SSL zones candle-by-candle so zones only appear when their
     source pivots are known. No look-ahead.
 
-    BSL = zone around confirmed swing HIGHs.
-    SSL = zone around confirmed swing LOWs.
+    BSL = zone around confirmed swing HIGHs (buy-side liquidity).
+    SSL = zone around confirmed swing LOWs (sell-side liquidity).
 
-    Clustering: pivot highs/lows within tolerance_points*point of each other
-    merge into one zone.  A new pivot expanding a cluster updates the boundaries.
+    Clustering (transitive, Task 3):
+    - Pivots within tolerance of each other (directly or transitively) merge into one zone.
+    - A new pivot whose price falls within an existing active zone's boundaries expands that zone.
+    - Prevents duplicate zones from the same cluster.
 
-    Invalidation (Phase 2 only):
-      BSL: candle CLOSES above zone.upper  → INVALIDATED
-      SSL: candle CLOSES below zone.lower  → INVALIDATED
+    Zone lifecycle (Phase 2):
+    - ACTIVE: zone is valid, no interaction yet.
+    - SWEPT: a candle's wick pierced the zone boundary AND closed back inside.
+              SweepEvidence is stored. Once SWEPT, cannot become INVALIDATED.
+    - INVALIDATED: a candle CLOSED beyond the zone boundary (no close-back).
+    - (CONSUMED and EXPIRED are Phase 3+ concerns.)
+
+    BSL sweep:  candle.high > zone.upper  AND candle.close <= zone.upper
+    BSL breakout: candle.close > zone.upper  (no close-back)
+    SSL sweep:  candle.low < zone.lower   AND candle.close >= zone.lower
+    SSL breakout: candle.close < zone.lower
+
+    Task 4 — Provenance:
+    - Each zone stores source_pivots (full Pivot objects).
+    - Every status transition calls add_event with type, ts, candle_index, price, detail.
     """
     tolerance = tolerance_points * point
     zones: list[LiquidityZone] = []
@@ -59,26 +103,70 @@ def build_zones(
             else:
                 _integrate_pivot(zones, pivot, ZoneType.SSL, tolerance, candle.timestamp, i)
 
-        # 2. Update active zone statuses based on current candle close
+        # 2. Update active zone statuses based on current candle
         for zone in zones:
-            if zone.status != ZoneStatus.ACTIVE:
-                continue
+            if zone.status not in (ZoneStatus.ACTIVE,):
+                continue  # SWEPT, INVALIDATED, etc. are terminal in Phase 2
             if zone.created_at_index >= i:
-                continue  # zone created this candle; skip invalidation check same bar
+                continue  # zone created this same candle — skip same-bar evaluation
 
-            if zone.zone_type == ZoneType.BSL and candle.close > zone.upper:
-                zone.status = ZoneStatus.INVALIDATED
-                zone.invalidated_at = candle.timestamp
-                zone.add_event("INVALIDATED", candle.timestamp,
-                               f"Close {candle.close} > upper {zone.upper}")
-                logger.debug("BSL zone %s invalidated at %s", zone.zone_id, candle.timestamp)
+            if zone.zone_type == ZoneType.BSL:
+                if candle.high > zone.upper and candle.close <= zone.upper:
+                    # Valid sweep: wick above, close back inside
+                    zone.status = ZoneStatus.SWEPT
+                    zone.sweep_evidence = SweepEvidence(
+                        candle_index=i,
+                        candle_timestamp=candle.timestamp,
+                        wick_extreme=candle.high,
+                        close_price=candle.close,
+                        zone_id=zone.zone_id,
+                    )
+                    zone.add_event(
+                        "SWEPT", candle.timestamp, candle_index=i,
+                        price=candle.high,
+                        detail=f"wick {candle.high} > upper {zone.upper}, close {candle.close} inside",
+                    )
+                    logger.debug("BSL zone %s SWEPT at %s", zone.zone_id, candle.timestamp)
 
-            elif zone.zone_type == ZoneType.SSL and candle.close < zone.lower:
-                zone.status = ZoneStatus.INVALIDATED
-                zone.invalidated_at = candle.timestamp
-                zone.add_event("INVALIDATED", candle.timestamp,
-                               f"Close {candle.close} < lower {zone.lower}")
-                logger.debug("SSL zone %s invalidated at %s", zone.zone_id, candle.timestamp)
+                elif candle.close > zone.upper:
+                    # Breakout / invalidation
+                    zone.status = ZoneStatus.INVALIDATED
+                    zone.invalidated_at = candle.timestamp
+                    zone.add_event(
+                        "INVALIDATED", candle.timestamp, candle_index=i,
+                        price=candle.close,
+                        detail=f"close {candle.close} > upper {zone.upper}",
+                    )
+                    logger.debug("BSL zone %s INVALIDATED at %s", zone.zone_id, candle.timestamp)
+
+            elif zone.zone_type == ZoneType.SSL:
+                if candle.low < zone.lower and candle.close >= zone.lower:
+                    # Valid sweep: wick below, close back inside
+                    zone.status = ZoneStatus.SWEPT
+                    zone.sweep_evidence = SweepEvidence(
+                        candle_index=i,
+                        candle_timestamp=candle.timestamp,
+                        wick_extreme=candle.low,
+                        close_price=candle.close,
+                        zone_id=zone.zone_id,
+                    )
+                    zone.add_event(
+                        "SWEPT", candle.timestamp, candle_index=i,
+                        price=candle.low,
+                        detail=f"wick {candle.low} < lower {zone.lower}, close {candle.close} inside",
+                    )
+                    logger.debug("SSL zone %s SWEPT at %s", zone.zone_id, candle.timestamp)
+
+                elif candle.close < zone.lower:
+                    # Breakout / invalidation
+                    zone.status = ZoneStatus.INVALIDATED
+                    zone.invalidated_at = candle.timestamp
+                    zone.add_event(
+                        "INVALIDATED", candle.timestamp, candle_index=i,
+                        price=candle.close,
+                        detail=f"close {candle.close} < lower {zone.lower}",
+                    )
+                    logger.debug("SSL zone %s INVALIDATED at %s", zone.zone_id, candle.timestamp)
 
     zones.sort(key=lambda z: z.created_at_index)
     return zones
@@ -92,21 +180,29 @@ def _integrate_pivot(
     created_at: datetime,
     created_at_index: int,
 ) -> None:
-    """Add pivot to an existing active zone cluster or create a new zone."""
-    # Look for an existing ACTIVE zone of the same type to merge into
+    """
+    Add pivot to an existing active zone cluster or create a new zone.
+
+    Task 3 — no-duplicate rule:
+    If pivot.price falls within an existing ACTIVE zone's [lower-tolerance, upper+tolerance]
+    band, expand that zone rather than creating a new one.
+    """
     for zone in zones:
         if zone.zone_type != zone_type or zone.status != ZoneStatus.ACTIVE:
             continue
-        # Check if pivot price falls within (or adjacent to) the zone's tolerance band
         if zone.lower - tolerance <= pivot.price <= zone.upper + tolerance:
-            # Expand zone boundaries to include this pivot
+            # Expand zone to absorb this pivot
             new_upper = max(zone.upper, pivot.price + tolerance)
             new_lower = min(zone.lower, pivot.price - tolerance)
             zone.upper = new_upper
             zone.lower = new_lower
             zone.source_pivot_indices.append(pivot.index)
-            zone.add_event("EXPANDED", created_at,
-                           f"Pivot idx={pivot.index} price={pivot.price}")
+            zone.source_pivots.append(pivot)
+            zone.add_event(
+                "EXPANDED", created_at, candle_index=created_at_index,
+                price=pivot.price,
+                detail=f"Pivot idx={pivot.index} price={pivot.price} confirmed_at={pivot.confirmed_at.isoformat()}",
+            )
             return
 
     # No existing zone absorbed this pivot — create a new one
@@ -116,10 +212,15 @@ def _integrate_pivot(
         upper=pivot.price + tolerance,
         lower=pivot.price - tolerance,
         source_pivot_indices=[pivot.index],
+        source_pivots=[pivot],
         created_at_index=created_at_index,
         created_at=created_at,
     )
-    new_zone.add_event("CREATED", created_at, f"Pivot idx={pivot.index} price={pivot.price}")
+    new_zone.add_event(
+        "CREATED", created_at, candle_index=created_at_index,
+        price=pivot.price,
+        detail=f"Pivot idx={pivot.index} price={pivot.price} confirmed_at={pivot.confirmed_at.isoformat()}",
+    )
     zones.append(new_zone)
 
 

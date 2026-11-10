@@ -1,0 +1,86 @@
+"""Unit tests for CandleCache integrity validation — Task 6."""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+import pytest
+
+from mt5_liquidity.data.cache import CandleCache
+from mt5_liquidity.data.candles import Candle
+from tests.fixtures.candle_fixtures import BASE_TIME, flat_series
+
+
+FROM_DT = datetime(2025, 1, 6, tzinfo=timezone.utc)
+TO_DT   = datetime(2025, 1, 10, tzinfo=timezone.utc)
+SYMBOL  = "XAUUSD"
+TF      = "M5"
+
+
+def _sample_candles() -> list[Candle]:
+    return flat_series(10, price=1000.0, start=FROM_DT)
+
+
+@pytest.fixture
+def cache(tmp_path):
+    return CandleCache(str(tmp_path))
+
+
+def test_save_and_load_matching_metadata(cache):
+    """Round-trip save/load with matching metadata returns candles."""
+    candles = _sample_candles()
+    cache.save(candles, SYMBOL, TF, FROM_DT, TO_DT)
+    loaded = cache.load(SYMBOL, TF, FROM_DT, TO_DT)
+    assert loaded is not None
+    assert len(loaded) == len(candles)
+
+
+def test_load_mismatched_symbol_returns_none(cache):
+    """Loading with wrong symbol must return None."""
+    candles = _sample_candles()
+    cache.save(candles, SYMBOL, TF, FROM_DT, TO_DT)
+    loaded = cache.load("EURUSD", TF, FROM_DT, TO_DT)
+    assert loaded is None
+
+
+def test_load_mismatched_timeframe_returns_none(cache):
+    """Loading with wrong timeframe must return None."""
+    candles = _sample_candles()
+    cache.save(candles, SYMBOL, TF, FROM_DT, TO_DT)
+    loaded = cache.load(SYMBOL, "M15", FROM_DT, TO_DT)
+    assert loaded is None
+
+
+def test_load_uncovered_range_returns_none(cache):
+    """Loading a range not fully covered by cached range must return None."""
+    candles = _sample_candles()
+    cache.save(candles, SYMBOL, TF, FROM_DT, TO_DT)
+    # Request starts BEFORE cached from_dt
+    earlier = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    loaded = cache.load(SYMBOL, TF, earlier, TO_DT)
+    assert loaded is None
+
+
+def test_refresh_causes_next_load_to_return_none(cache):
+    """After refresh(), load() must return None."""
+    candles = _sample_candles()
+    cache.save(candles, SYMBOL, TF, FROM_DT, TO_DT)
+    assert cache.load(SYMBOL, TF, FROM_DT, TO_DT) is not None
+    cache.refresh(SYMBOL, TF)
+    assert cache.load(SYMBOL, TF, FROM_DT, TO_DT) is None
+
+
+def test_load_missing_sidecar_returns_none(cache, tmp_path):
+    """If Parquet exists but JSON sidecar is missing, load() returns None."""
+    candles = _sample_candles()
+    path = cache.save(candles, SYMBOL, TF, FROM_DT, TO_DT)
+    # Delete only the JSON
+    path.with_suffix(".json").unlink()
+    loaded = cache.load(SYMBOL, TF, FROM_DT, TO_DT)
+    assert loaded is None
+
+
+def test_load_no_file_returns_none(cache):
+    """load() with no matching file returns None cleanly."""
+    loaded = cache.load(SYMBOL, TF, FROM_DT, TO_DT)
+    assert loaded is None

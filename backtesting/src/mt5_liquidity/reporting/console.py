@@ -67,8 +67,27 @@ def print_zones_report(zones: list[LiquidityZone], candles: list[Candle]) -> Non
         print(
             f"  [{status_str:<12}] {z.zone_type.value}  "
             f"upper={z.upper:.2f}  lower={z.lower:.2f}  "
-            f"pivots={z.source_pivot_indices}  "
             f"created_idx={z.created_at_index}  "
             f"ts={z.created_at.strftime('%Y-%m-%d %H:%M')}"
         )
+        # Provenance: source pivots
+        for p in z.source_pivots:
+            print(
+                f"    pivot idx={p.index}  price={p.price}  "
+                f"confirmed_at={p.confirmed_at.strftime('%Y-%m-%d %H:%M')}"
+            )
+        # Status-transition events
+        for ev in z.events:
+            print(
+                f"    [{ev['type']:<12}] idx={ev.get('candle_index', '?')}  "
+                f"price={ev.get('price', 0):.4f}  {ev.get('detail', '')}"
+            )
+        # Sweep evidence
+        if z.sweep_evidence is not None:
+            se = z.sweep_evidence
+            print(
+                f"    [SWEEP EVIDENCE] wick={se.wick_extreme}  "
+                f"close={se.close_price}  idx={se.candle_index}"
+            )
+        print()
     print()
