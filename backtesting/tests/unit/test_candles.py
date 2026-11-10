@@ -151,3 +151,25 @@ def test_naive_timestamp_raises():
     """Candle with naive (non-UTC) timestamp must raise ValueError."""
     with pytest.raises(ValueError, match="UTC-aware"):
         Candle(datetime(2025, 1, 6, 0, 0), 100, 105, 99, 103)
+
+
+
+def test_three_candles_with_wrong_five_minute_slot_raise():
+    """Three timestamps in the same quarter-hour must still match 00/05/10."""
+    candles = [
+        _m5_at(0, 100, 105, 99, 103),
+        _m5_at(5, 103, 107, 102, 106),
+        _m5_at(14, 106, 108, 104, 107),
+    ]
+    with pytest.raises(ValueError, match="expected 5-minute slots"):
+        aggregate_m5_to_m15(candles)
+
+
+def test_duplicate_m5_timestamp_raises():
+    candles = [
+        _m5_at(0, 100, 105, 99, 103),
+        _m5_at(5, 103, 107, 102, 106),
+        _m5_at(5, 106, 108, 104, 107),
+    ]
+    with pytest.raises(ValueError, match="Out-of-order"):
+        aggregate_m5_to_m15(candles)
