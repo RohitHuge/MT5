@@ -1,4 +1,4 @@
-""""CLI entry point — four subcommands: inspect, fetch, zones, backtest."""
+"""CLI entry point — four subcommands: inspect, fetch, zones, backtest."""
 from __future__ import annotations
 
 import argparse
