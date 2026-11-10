@@ -73,3 +73,26 @@ def test_cap_at_volume_max():
     result = _size(signal_price=2000.0, sl_price=1999.99, equity=10_000_000.0, risk_pct=5.0)
     assert result.rejection_reason is None
     assert result.lots <= XAUUSD["volume_max"]
+
+
+def test_reject_stop_distance_below_configured_minimum():
+    result = _size(signal_price=2000.0, sl_price=1999.99,
+                   min_stop_distance_points=5.0)
+    assert result.lots == 0.0
+    assert "minimum" in result.rejection_reason
+
+
+def test_strategy_max_lot_cap_is_respected():
+    result = _size(signal_price=2000.0, sl_price=1999.0,
+                   equity=100_000.0, risk_pct=5.0,
+                   max_lots_per_trade=0.25)
+    assert result.rejection_reason is None
+    assert result.lots <= 0.25
+
+
+def test_max_lot_cap_rounds_down_to_volume_step():
+    result = _size(signal_price=2000.0, sl_price=1999.0,
+                   equity=100_000.0, risk_pct=5.0,
+                   max_lots_per_trade=0.257)
+    assert result.rejection_reason is None
+    assert result.lots == pytest.approx(0.25)
