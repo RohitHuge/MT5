@@ -1,52 +1,42 @@
-"""Publish a single generated report bundle to GitHub without touching other files."""
+"""Publish a generated report using the machine's existing Git authentication."""
 from __future__ import annotations
 
-import base64
-import json
 import logging
-import os
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_REPOSITORY = "RohitHuge/MT5"
 DEFAULT_BRANCH = "main"
-GITHUB_API = "https://api.github.com"
 
 
 class ReportPublishError(RuntimeError):
     """Raised when a report cannot be safely published to GitHub."""
 
 
-def _request(token: str, method: str, path: str, payload: dict | None = None) -> dict:
-    body = None if payload is None else json.dumps(payload).encode("utf-8")
-    request = Request(
-        f"{GITHUB_API}{path}", data=body, method=method,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "Content-Type": "application/json",
-            "User-Agent": "mt5-liquidity-backtester",
-        },
-    )
+def _run_git(args: list[str], *, cwd: Path | None = None) -> str:
     try:
-        with urlopen(request, timeout=30) as response:
-            raw = response.read()
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise ReportPublishError(f"GitHub API returned HTTP {exc.code}: {detail}") from exc
-    except (URLError, TimeoutError) as exc:
-        raise ReportPublishError(f"GitHub API request failed: {exc}") from exc
-    if not raw:
-        return {}
-    try:
-        return json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ReportPublishError("GitHub API returned an invalid JSON response") from exc
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd) if cwd else None,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except FileNotFoundError as exc:
+        raise ReportPublishError("Git was not found. Install Git for Windows and ensure git is on PATH.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ReportPublishError(f"Git command timed out: git {' '.join(args)}") from exc
+
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "Unknown Git error").strip()
+        raise ReportPublishError(f"Git command failed (git {' '.join(args)}): {detail}")
+    return completed.stdout.strip()
 
 
 def publish_report_directory(
@@ -54,74 +44,70 @@ def publish_report_directory(
     *,
     repository: str = DEFAULT_REPOSITORY,
     branch: str = DEFAULT_BRANCH,
-    token: str | None = None,
 ) -> str:
-    """Commit only report_dir beneath backtesting/reports to the target branch.
+    """Push only one report directory to the target branch.
 
-    Uses Git's tree/commit/ref API, preserving all files already on the branch.
-    The caller's local Git working tree is never modified.
+    A temporary clone uses the machine's configured Git credential helper
+    (e.g. Git Credential Manager). The user's working tree and current branch
+    are never modified. The report remains local if any Git operation fails.
     """
     report_path = Path(report_dir).resolve()
     if not report_path.is_dir():
         raise ReportPublishError(f"Report directory does not exist: {report_path}")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ReportPublishError("repository must be in owner/name format")
-    if not re.fullmatch(r"[A-Za-z0-9._/-]+", branch) or branch.startswith("/") or ".." in branch:
-        raise ReportPublishError("Invalid Git branch name")
+    if branch != "main":
+        raise ReportPublishError("Backtest reports are configured to publish only to main")
 
-    secret = token or os.getenv("MT5_GITHUB_TOKEN") or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
-    if not secret:
-        raise ReportPublishError(
-            "GitHub token not configured. Set MT5_GITHUB_TOKEN (fine-grained token with Contents: Read and write)."
-        )
+    parts = report_path.parts
+    reports_positions = [i for i, part in enumerate(parts) if part.lower() == "reports"]
+    if not reports_positions:
+        raise ReportPublishError("Report directory must be inside a reports directory")
+    suffix = Path(*parts[reports_positions[-1]:])
+    if len(suffix.parts) != 3:
+        raise ReportPublishError("Expected report path: reports/<symbol>/<run_id>")
 
     files = sorted(p for p in report_path.rglob("*") if p.is_file())
     if not files:
         raise ReportPublishError("Report directory contains no files")
-
-    # The local exporter writes reports under backtesting/reports by default.
-    # Find that directory boundary without depending on the current directory.
-    parts = report_path.parts
-    reports_positions = [i for i, part in enumerate(parts) if part == "reports"]
-    if not reports_positions:
-        raise ReportPublishError("Report directory must be inside a reports directory")
-    reports_index = reports_positions[-1]
-    suffix = Path(*parts[reports_index:])
-    if len(suffix.parts) < 3:
-        raise ReportPublishError("Expected report path: reports/<symbol>/<run_id>")
-    report_root = Path(*parts[:reports_index + 1])
-
-    api_repo = f"/repos/{repository}"
-    ref = _request(secret, "GET", f"{api_repo}/git/ref/heads/{branch}")
-    parent_sha = ref["object"]["sha"]
-    parent = _request(secret, "GET", f"{api_repo}/git/commits/{parent_sha}")
-    base_tree_sha = parent["tree"]["sha"]
-
-    tree_entries = []
     for file_path in files:
-        rel_file = file_path.relative_to(report_path)
-        repo_path = (Path("backtesting") / suffix / rel_file).as_posix()
-        if any(part in {".git", ".env", "__pycache__"} for part in rel_file.parts):
-            raise ReportPublishError(f"Refusing to publish unsafe report path: {repo_path}")
+        rel = file_path.relative_to(report_path)
+        if any(part in {".git", ".env", "__pycache__"} for part in rel.parts):
+            raise ReportPublishError(f"Refusing to publish unsafe report file: {rel}")
         if file_path.stat().st_size > 10 * 1024 * 1024:
-            raise ReportPublishError(f"Report file exceeds 10 MiB Git blob safety limit: {repo_path}")
-        encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
-        blob = _request(secret, "POST", f"{api_repo}/git/blobs", {
-            "content": encoded, "encoding": "base64",
-        })
-        tree_entries.append({
-            "path": repo_path, "mode": "100644", "type": "blob", "sha": blob["sha"],
-        })
+            raise ReportPublishError(f"Report file exceeds 10 MiB Git safety limit: {rel}")
 
-    tree = _request(secret, "POST", f"{api_repo}/git/trees", {
-        "base_tree": base_tree_sha, "tree": tree_entries,
-    })
-    commit = _request(secret, "POST", f"{api_repo}/git/commits", {
-        "message": f"Add backtest report: {suffix.parts[-2]}/{suffix.parts[-1]}",
-        "tree": tree["sha"], "parents": [parent_sha],
-    })
-    _request(secret, "PATCH", f"{api_repo}/git/refs/heads/{branch}", {
-        "sha": commit["sha"], "force": False,
-    })
-    logger.info("Published report to %s/%s at commit %s", repository, branch, commit["sha"])
-    return commit["sha"]
+    clone_url = f"https://github.com/{repository}.git"
+    with tempfile.TemporaryDirectory(prefix="mt5-report-publish-") as temp:
+        workspace = Path(temp) / "repo"
+        _run_git(["clone", "--depth", "1", "--branch", branch, clone_url, str(workspace)])
+
+        destination = workspace / "backtesting" / suffix
+        if destination.exists():
+            raise ReportPublishError(
+                f"Report destination already exists on {branch}: {destination.relative_to(workspace)}"
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(report_path, destination)
+
+        repo_relative = (Path("backtesting") / suffix).as_posix()
+        _run_git(["add", "--", repo_relative], cwd=workspace)
+        staged = _run_git(["diff", "--cached", "--name-only"], cwd=workspace).splitlines()
+        expected = {
+            (Path(repo_relative) / file.relative_to(report_path)).as_posix()
+            for file in files
+        }
+        if set(staged) != expected:
+            raise ReportPublishError(
+                "Safety check failed: staged files do not exactly match this report bundle"
+            )
+
+        _run_git(
+            ["commit", "-m", f"Add backtest report: {suffix.parts[1]}/{suffix.parts[2]}"],
+            cwd=workspace,
+        )
+        commit_sha = _run_git(["rev-parse", "HEAD"], cwd=workspace)
+        _run_git(["push", "origin", f"HEAD:refs/heads/{branch}"], cwd=workspace)
+
+    logger.info("Published report to %s/%s at commit %s", repository, branch, commit_sha)
+    return commit_sha

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import base64
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -10,55 +11,74 @@ from mt5_liquidity.reporting.github_publisher import (
 )
 
 
-def test_publish_requires_token(tmp_path, monkeypatch):
-    (tmp_path / "summary.json").write_text("{}", encoding="utf-8")
-    for key in ("MT5_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
-        monkeypatch.delenv(key, raising=False)
-    with pytest.raises(ReportPublishError, match="token not configured"):
-        publish_report_directory(tmp_path)
-
-
-def test_publish_uses_git_data_api_and_only_report_files(tmp_path, monkeypatch):
+def test_publish_clones_and_pushes_only_report_bundle(tmp_path, monkeypatch):
     report = tmp_path / "reports" / "XAUUSD" / "run-123"
     report.mkdir(parents=True)
     (report / "summary.json").write_text('{"net_pnl": 10}', encoding="utf-8")
     (report / "trades.csv").write_text("id,pnl\n1,10\n", encoding="utf-8")
-    monkeypatch.setenv("MT5_GITHUB_TOKEN", "test-token")
     calls = []
 
-    def fake_request(token, method, path, payload=None):
-        calls.append((method, path, payload))
-        if method == "GET" and path.endswith("/git/ref/heads/main"):
-            return {"object": {"sha": "parent-sha"}}
-        if method == "GET" and path.endswith("/git/commits/parent-sha"):
-            return {"tree": {"sha": "base-tree"}}
-        if method == "POST" and path.endswith("/git/blobs"):
-            assert payload["encoding"] == "base64"
-            base64.b64decode(payload["content"])
-            return {"sha": f"blob-{len(calls)}"}
-        if method == "POST" and path.endswith("/git/trees"):
-            return {"sha": "new-tree"}
-        if method == "POST" and path.endswith("/git/commits"):
-            return {"sha": "new-commit"}
-        if method == "PATCH" and path.endswith("/git/refs/heads/main"):
-            return {"object": {"sha": "new-commit"}}
-        raise AssertionError((method, path, payload))
+    def fake_run(command, cwd=None, check=False, capture_output=False, text=False, timeout=None):
+        args = command[1:]
+        calls.append((args, Path(cwd) if cwd else None))
+        if args[0] == "clone":
+            target = Path(args[-1])
+            (target / "backtesting" / "reports").mkdir(parents=True)
+        elif args[0] == "diff":
+            class Result:
+                returncode = 0
+                stdout = (
+                    "backtesting/reports/XAUUSD/run-123/summary.json\n"
+                    "backtesting/reports/XAUUSD/run-123/trades.csv\n"
+                )
+                stderr = ""
+            return Result()
+        elif args[0] == "rev-parse":
+            class Result:
+                returncode = 0
+                stdout = "abc123"
+                stderr = ""
+            return Result()
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return Result()
 
-    monkeypatch.setattr(
-        "mt5_liquidity.reporting.github_publisher._request", fake_request
-    )
-    sha = publish_report_directory(report, repository="RohitHuge/MT5", branch="main")
-    assert sha == "new-commit"
-    tree_payload = next(call[2] for call in calls if call[1].endswith("/git/trees"))
-    assert {entry["path"] for entry in tree_payload["tree"]} == {
-        "backtesting/reports/XAUUSD/run-123/summary.json",
-        "backtesting/reports/XAUUSD/run-123/trades.csv",
-    }
-    assert calls[-1][0:2] == ("PATCH", "/repos/RohitHuge/MT5/git/refs/heads/main")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    sha = publish_report_directory(report)
+    assert sha == "abc123"
+    commands = [item[0] for item in calls]
+    assert commands[0][:4] == ["clone", "--depth", "1", "--branch"]
+    assert ["add", "--", "backtesting/reports/XAUUSD/run-123"] in commands
+    assert ["push", "origin", "HEAD:refs/heads/main"] in commands
+    assert all("token" not in " ".join(command).lower() for command in commands)
 
 
-def test_publish_rejects_report_outside_reports_tree(tmp_path, monkeypatch):
+def test_publish_rejects_path_outside_reports_tree(tmp_path):
     (tmp_path / "summary.json").write_text("{}", encoding="utf-8")
-    monkeypatch.setenv("MT5_GITHUB_TOKEN", "test-token")
     with pytest.raises(ReportPublishError, match="inside a reports directory"):
         publish_report_directory(tmp_path)
+
+
+def test_publish_rejects_non_main_branch(tmp_path):
+    report = tmp_path / "reports" / "XAUUSD" / "run-123"
+    report.mkdir(parents=True)
+    (report / "summary.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ReportPublishError, match="only to main"):
+        publish_report_directory(report, branch="backtest-reports")
+
+
+def test_git_failure_keeps_local_report(tmp_path, monkeypatch):
+    report = tmp_path / "reports" / "XAUUSD" / "run-123"
+    report.mkdir(parents=True)
+    file = report / "summary.json"
+    file.write_text("{}", encoding="utf-8")
+
+    def fail_run(*args, **kwargs):
+        raise FileNotFoundError("git")
+    monkeypatch.setattr(subprocess, "run", fail_run)
+
+    with pytest.raises(ReportPublishError, match="Git was not found"):
+        publish_report_directory(report)
+    assert file.exists()
