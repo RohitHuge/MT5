@@ -31,25 +31,8 @@ def calculate_position_size(
     """
     Calculate lots from risk percentage.
 
-    if min_stop_distance_points < 0:
-        return SizingResult(0.0, 0.0, sl_points, 0.0, "min_stop_distance_points cannot be negative")
-    if sl_points < min_stop_distance_points:
-        value = (tick_value / tick_size) * point
-        return SizingResult(0.0, equity * risk_pct / 100.0, sl_points, value,
-                            f"SL distance {sl_points:.2f} points < minimum {min_stop_distance_points:.2f} points")
-    if max_lots_per_trade is not None and max_lots_per_trade <= 0:
-        return SizingResult(0.0, equity * risk_pct / 100.0, sl_points, 0.0,
-                            "max_lots_per_trade must be > 0")
-
-    value_per_point_per_lot = (tick_value / tick_size) * point
-      For XAUUSD: tick_value=1.00, tick_size=0.01, point=0.01 → 1.00 $/point/lot
-
-    sl_points = abs(signal_price - stop_loss_price) / point
-    risk_amount = equity * risk_pct / 100
-    lots_raw = risk_amount / (sl_points * value_per_point_per_lot)
-    lots = floor(lots_raw / volume_step) * volume_step  (round DOWN)
-
-    Returns SizingResult with rejection_reason set when lots < volume_min.
+    Stop distance is expressed in broker points. The optional minimum rejects
+    stops that are too close; the optional strategy cap limits the final lot size.
     """
     if point <= 0 or tick_size <= 0 or tick_value <= 0 or volume_step <= 0:
         return SizingResult(0.0, 0.0, 0.0, 0.0, "Invalid symbol sizing metadata")
@@ -65,7 +48,24 @@ def calculate_position_size(
             rejection_reason="SL distance is zero — cannot size position",
         )
 
+    risk_amount = equity * risk_pct / 100.0
     value_per_point_per_lot = (tick_value / tick_size) * point
+
+    if min_stop_distance_points < 0:
+        return SizingResult(
+            0.0, risk_amount, sl_points, value_per_point_per_lot,
+            "min_stop_distance_points cannot be negative",
+        )
+    if sl_points < min_stop_distance_points:
+        return SizingResult(
+            0.0, risk_amount, sl_points, value_per_point_per_lot,
+            f"SL distance {sl_points:.2f} points < minimum {min_stop_distance_points:.2f} points",
+        )
+    if max_lots_per_trade is not None and max_lots_per_trade <= 0:
+        return SizingResult(
+            0.0, risk_amount, sl_points, value_per_point_per_lot,
+            "max_lots_per_trade must be > 0",
+        )
     risk_amount = equity * risk_pct / 100.0
     risk_per_lot = sl_points * value_per_point_per_lot
 
