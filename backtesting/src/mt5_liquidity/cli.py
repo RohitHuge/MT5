@@ -1,4 +1,4 @@
-"""CLI entry point — four subcommands: inspect, fetch, zones, backtest."""
+""""CLI entry point — four subcommands: inspect, fetch, zones, backtest."""
 from __future__ import annotations
 
 import argparse
@@ -121,7 +121,7 @@ def cmd_zones(args: argparse.Namespace) -> int:
             sym_info = adapter2.get_symbol_info(args.symbol)
             adapter2.disconnect()
     except Exception:
-        pass
+        logging.getLogger(__name__).exception("Could not retrieve symbol metadata for %s", args.symbol)
 
     point = sym_info.get("point")
     if point is None or point <= 0:
@@ -139,17 +139,17 @@ def cmd_zones(args: argparse.Namespace) -> int:
 
 def cmd_backtest(args: argparse.Namespace) -> int:
     cfg = load_config()
-    cfg.pivot_left    = args.pivot_left
-    cfg.pivot_right   = args.pivot_right
-    cfg.risk_pct      = args.risk_pct
-    cfg.rr_target     = args.rr_target
+    cfg.pivot_left = args.pivot_left
+    cfg.pivot_right = args.pivot_right
+    cfg.risk_pct = args.risk_pct
+    cfg.rr_target = args.rr_target
     cfg.max_positions = args.max_positions
     cfg.max_daily_loss_pct = args.max_daily_loss_pct
-    cfg.initial_equity     = args.equity
+    cfg.initial_equity = args.equity
 
     from_dt = _parse_date(args.from_date)
-    to_dt   = _parse_date(args.to_date)
-    cache   = CandleCache(cfg.cache_dir)
+    to_dt = _parse_date(args.to_date)
+    cache = CandleCache(cfg.cache_dir)
 
     # Load or fetch M5
     m5 = cache.load(args.symbol, "M5", from_dt, to_dt)
@@ -170,30 +170,33 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     if agg.incomplete_windows:
         print(f"  Warning: {len(agg.incomplete_windows)} incomplete M15 window(s) dropped from backtest.")
 
-    # Symbol metadata — try MT5; fall back to XAUUSD defaults
+    # Retrieve actual symbol metadata from the connected MT5 terminal.
     from .backtest.engine import SymbolMeta, run_backtest
     sym_meta: SymbolMeta | None = None
+    adapter3 = MT5Adapter(cfg)
     try:
-        adapter3 = MT5Adapter(cfg)
         if adapter3.connect():
             si = adapter3.get_symbol_info(args.symbol)
-            adapter3.disconnect()
+            # Keys must match MT5Adapter.get_symbol_info()'s public dictionary.
             sym_meta = SymbolMeta(
                 point=si["point"],
-                tick_value=si["trade_tick_value"],
-                tick_size=si["trade_tick_size"],
+                tick_value=si["tick_value"],
+                tick_size=si["tick_size"],
                 volume_min=si["volume_min"],
                 volume_max=si["volume_max"],
                 volume_step=si["volume_step"],
             )
     except Exception:
-        pass
+        logging.getLogger(__name__).exception(
+            "Could not retrieve symbol metadata for %s", args.symbol
+        )
+    finally:
+        adapter3.disconnect()
 
     if sym_meta is None:
         print(
             f"ERROR: Could not retrieve symbol metadata for {args.symbol}. "
-            "Start the MT5 terminal and ensure the symbol is available, "
-            "or supply metadata via --point / --tick-value etc. (see --help).",
+            "Check the preceding MT5/metadata error for details.",
             file=sys.stderr,
         )
         return 1
@@ -246,9 +249,9 @@ def main() -> None:
 
     args = parser.parse_args()
     dispatch = {
-        "inspect":  cmd_inspect,
-        "fetch":    cmd_fetch,
-        "zones":    cmd_zones,
+        "inspect": cmd_inspect,
+        "fetch": cmd_fetch,
+        "zones": cmd_zones,
         "backtest": cmd_backtest,
     }
     sys.exit(dispatch[args.command](args))
