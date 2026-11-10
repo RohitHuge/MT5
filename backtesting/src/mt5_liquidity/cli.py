@@ -1,4 +1,4 @@
-"""CLI entry point — three subcommands: inspect, fetch, zones."""
+"""CLI entry point — four subcommands: inspect, fetch, zones, backtest."""
 from __future__ import annotations
 
 import argparse
@@ -19,6 +19,7 @@ from .reporting.console import (
     print_terminal_info,
     print_zones_report,
 )
+from .reporting.metrics import print_backtest_report
 from .strategy.liquidity_zones import build_zones
 from .strategy.swings import detect_pivots
 
@@ -136,6 +137,73 @@ def cmd_zones(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backtest(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.pivot_left    = args.pivot_left
+    cfg.pivot_right   = args.pivot_right
+    cfg.risk_pct      = args.risk_pct
+    cfg.rr_target     = args.rr_target
+    cfg.max_positions = args.max_positions
+    cfg.max_daily_loss_pct = args.max_daily_loss_pct
+    cfg.initial_equity     = args.equity
+
+    from_dt = _parse_date(args.from_date)
+    to_dt   = _parse_date(args.to_date)
+    cache   = CandleCache(cfg.cache_dir)
+
+    # Load or fetch M5
+    m5 = cache.load(args.symbol, "M5", from_dt, to_dt)
+    if m5 is None:
+        adapter = MT5Adapter(cfg)
+        if not adapter.connect():
+            print("ERROR: Could not connect to MT5 and no cache found.", file=sys.stderr)
+            return 1
+        try:
+            m5 = fetch_m5(adapter, args.symbol, from_dt, to_dt)
+            cache.save(m5, args.symbol, "M5", from_dt, to_dt)
+        finally:
+            adapter.disconnect()
+
+    # Derive M15
+    agg = aggregate_m5_to_m15(m5)
+    m15 = agg.candles
+    if agg.incomplete_windows:
+        print(f"  Warning: {len(agg.incomplete_windows)} incomplete M15 window(s) dropped from backtest.")
+
+    # Symbol metadata — try MT5; fall back to XAUUSD defaults
+    from .backtest.engine import SymbolMeta, run_backtest
+    sym_meta: SymbolMeta | None = None
+    try:
+        adapter3 = MT5Adapter(cfg)
+        if adapter3.connect():
+            si = adapter3.get_symbol_info(args.symbol)
+            adapter3.disconnect()
+            sym_meta = SymbolMeta(
+                point=si["point"],
+                tick_value=si["trade_tick_value"],
+                tick_size=si["trade_tick_size"],
+                volume_min=si["volume_min"],
+                volume_max=si["volume_max"],
+                volume_step=si["volume_step"],
+            )
+    except Exception:
+        pass
+
+    if sym_meta is None:
+        print(
+            "WARNING: Could not fetch live symbol metadata — using XAUUSD defaults "
+            "(point=0.01, tick_value=1.0, tick_size=0.01, vol_min=0.01, vol_max=100, vol_step=0.01)",
+        )
+        sym_meta = SymbolMeta(
+            point=0.01, tick_value=1.0, tick_size=0.01,
+            volume_min=0.01, volume_max=100.0, volume_step=0.01,
+        )
+
+    result = run_backtest(m15_candles=m15, m5_candles=m5, config=cfg, symbol_meta=sym_meta)
+    print_backtest_report(result, args.symbol, args.from_date, args.to_date)
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="mt5_liquidity", description="XAUUSD Liquidity Backtester")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -158,8 +226,26 @@ def main() -> None:
     p_zones.add_argument("--pivot-left", type=int, default=2)
     p_zones.add_argument("--pivot-right", type=int, default=2)
 
+    # backtest
+    p_bt = sub.add_parser("backtest", help="Run full liquidity-sweep backtest")
+    p_bt.add_argument("--symbol", default="XAUUSD")
+    p_bt.add_argument("--from", dest="from_date", required=True)
+    p_bt.add_argument("--to", dest="to_date", required=True)
+    p_bt.add_argument("--pivot-left", type=int, default=2)
+    p_bt.add_argument("--pivot-right", type=int, default=2)
+    p_bt.add_argument("--risk-pct", type=float, default=0.5)
+    p_bt.add_argument("--rr-target", type=float, default=2.0)
+    p_bt.add_argument("--max-positions", type=int, default=1)
+    p_bt.add_argument("--max-daily-loss-pct", type=float, default=3.0)
+    p_bt.add_argument("--equity", type=float, default=10_000.0)
+
     args = parser.parse_args()
-    dispatch = {"inspect": cmd_inspect, "fetch": cmd_fetch, "zones": cmd_zones}
+    dispatch = {
+        "inspect":  cmd_inspect,
+        "fetch":    cmd_fetch,
+        "zones":    cmd_zones,
+        "backtest": cmd_backtest,
+    }
     sys.exit(dispatch[args.command](args))
 
 

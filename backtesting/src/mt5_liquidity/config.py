@@ -36,13 +36,15 @@ class BacktestConfig:
     retest_band_points: int = 5   # points either side of structure level for retest band
     sl_buffer_points: int = 5     # buffer above/below sweep extreme for stop-loss
 
-    # Backtest placeholders
+    # Backtest execution
     risk_pct: float = 0.5
     rr_target: float = 2.0
     max_positions: int = 1
     spread_points: int = 21
     commission_usd: float = 0.0
     slippage_points: int = 3
+    max_daily_loss_pct: float = 3.0
+    initial_equity: float = 10_000.0
 
 
 def load_config(env_path: str | None = None) -> BacktestConfig:
