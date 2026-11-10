@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from mt5_liquidity.backtest.execution import simulate_fill
+from mt5_liquidity.backtest.execution import compute_fill_price, simulate_fill
 from mt5_liquidity.data.candles import Candle
 
 POINT = 0.01
@@ -71,3 +71,33 @@ def test_returns_none_when_no_next_bar():
     candles = [_candle(0, 2000.0, 2010.0, 1990.0, 2005.0)]
     result = _fill("BUY", sl=1990.0, signal_idx=0, candles=candles)
     assert result is None
+
+
+# --- compute_fill_price (Fix 1 helper) ---
+
+def test_compute_fill_price_buy():
+    price = compute_fill_price("BUY", candle_open=2000.0, spread_points=21, slippage_points=3, point=POINT)
+    assert price == pytest.approx(2000.0 + 24 * POINT)
+
+
+def test_compute_fill_price_sell():
+    price = compute_fill_price("SELL", candle_open=2000.0, spread_points=21, slippage_points=3, point=POINT)
+    assert price == pytest.approx(2000.0 - 3 * POINT)
+
+
+def test_compute_fill_price_zero_spread_zero_slip():
+    buy  = compute_fill_price("BUY",  candle_open=2000.0, spread_points=0, slippage_points=0, point=POINT)
+    sell = compute_fill_price("SELL", candle_open=2000.0, spread_points=0, slippage_points=0, point=POINT)
+    assert buy  == pytest.approx(2000.0)
+    assert sell == pytest.approx(2000.0)
+
+
+def test_simulate_fill_uses_compute_fill_price_internally():
+    # simulate_fill must produce the same fill_price as compute_fill_price
+    candles = [
+        _candle(0, 2000.0, 2010.0, 1990.0, 2005.0),
+        _candle(1, 2050.0, 2060.0, 2040.0, 2055.0),
+    ]
+    result = _fill("BUY", sl=1990.0, signal_idx=0, spread=21, slip=3, candles=candles)
+    expected = compute_fill_price("BUY", 2050.0, 21, 3, POINT)
+    assert result.fill_price == pytest.approx(expected)

@@ -191,13 +191,18 @@ def cmd_backtest(args: argparse.Namespace) -> int:
 
     if sym_meta is None:
         print(
-            "WARNING: Could not fetch live symbol metadata — using XAUUSD defaults "
-            "(point=0.01, tick_value=1.0, tick_size=0.01, vol_min=0.01, vol_max=100, vol_step=0.01)",
+            f"ERROR: Could not retrieve symbol metadata for {args.symbol}. "
+            "Start the MT5 terminal and ensure the symbol is available, "
+            "or supply metadata via --point / --tick-value etc. (see --help).",
+            file=sys.stderr,
         )
-        sym_meta = SymbolMeta(
-            point=0.01, tick_value=1.0, tick_size=0.01,
-            volume_min=0.01, volume_max=100.0, volume_step=0.01,
-        )
+        return 1
+
+    from .backtest.engine import validate_symbol_meta
+    meta_error = validate_symbol_meta(sym_meta, args.symbol)
+    if meta_error:
+        print(f"ERROR: Invalid symbol metadata — {meta_error}", file=sys.stderr)
+        return 1
 
     result = run_backtest(m15_candles=m15, m5_candles=m5, config=cfg, symbol_meta=sym_meta)
     print_backtest_report(result, args.symbol, args.from_date, args.to_date)
