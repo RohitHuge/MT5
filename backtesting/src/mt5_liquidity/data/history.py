@@ -52,24 +52,40 @@ def fetch_m15_native(
 
 def compare_m15(derived: list[Candle] | AggregationResult, native: list[Candle]) -> dict:
     """
-    Compare derived M15 (from M5 aggregation) vs native MT5 M15.
-    Accepts either a list[Candle] or AggregationResult from aggregate_m5_to_m15.
-    Returns matched count, mismatches list, and coverage percentage.
+    Compare derived and native M15 candles in both directions.
+    Reports missing timestamps on either side as well as OHLC mismatches.
+    Coverage is matched / union-of-timestamps, preventing omitted candles
+    from being hidden by a derived-only denominator.
     """
     if isinstance(derived, AggregationResult):
         derived = derived.candles
+
+    derived_map = {c.timestamp: c for c in derived}
     native_map = {c.timestamp: c for c in native}
     matched = 0
     mismatched: list[dict] = []
+    missing_derived: list[str] = []
+    missing_native: list[str] = []
 
-    for d in derived:
-        n = native_map.get(d.timestamp)
-        if n is None:
+    for ts in sorted(set(derived_map) | set(native_map)):
+        d = derived_map.get(ts)
+        n = native_map.get(ts)
+        if d is None:
+            missing_derived.append(ts.isoformat())
             mismatched.append({
-                "ts": d.timestamp.isoformat(),
+                "ts": ts.isoformat(),
+                "derived_ohlc": None,
+                "native_ohlc": (n.open, n.high, n.low, n.close),
+                "reason": "missing derived candle",
+            })
+            continue
+        if n is None:
+            missing_native.append(ts.isoformat())
+            mismatched.append({
+                "ts": ts.isoformat(),
                 "derived_ohlc": (d.open, d.high, d.low, d.close),
                 "native_ohlc": None,
-                "reason": "timestamp not in native",
+                "reason": "missing native candle",
             })
             continue
 
@@ -81,7 +97,7 @@ def compare_m15(derived: list[Candle] | AggregationResult, native: list[Candle])
             or abs(d.close - n.close) > tol
         ):
             mismatched.append({
-                "ts": d.timestamp.isoformat(),
+                "ts": ts.isoformat(),
                 "derived_ohlc": (d.open, d.high, d.low, d.close),
                 "native_ohlc": (n.open, n.high, n.low, n.close),
                 "reason": "OHLC mismatch",
@@ -89,12 +105,17 @@ def compare_m15(derived: list[Candle] | AggregationResult, native: list[Candle])
         else:
             matched += 1
 
-    total = len(derived)
-    coverage_pct = round(matched / total * 100, 2) if total > 0 else 0.0
-    logger.info("M15 comparison: %d matched, %d mismatched, %.1f%% coverage",
-                matched, len(mismatched), coverage_pct)
+    total = len(set(derived_map) | set(native_map))
+    coverage_pct = round(matched / total * 100, 2) if total else 0.0
+    logger.info(
+        "M15 comparison: %d matched, %d mismatched, %d missing-derived, "
+        "%d missing-native, %.1f%% coverage",
+        matched, len(mismatched), len(missing_derived), len(missing_native), coverage_pct,
+    )
     return {
         "matched": matched,
         "mismatched": mismatched,
+        "missing_derived": missing_derived,
+        "missing_native": missing_native,
         "coverage_pct": coverage_pct,
     }
