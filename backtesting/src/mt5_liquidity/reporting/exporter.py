@@ -4,7 +4,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -85,7 +85,7 @@ def export_backtest_report(
         "force_closed": result.force_closed,
         "statistics": asdict(stats),
     }
-    _write_json(run_dir / "summary.json", summary)
+    # JSON has no standard Infinity value; store a stable string for zero-loss runs.\n    if summary["statistics"]["profit_factor"] == float("inf"):\n        summary["statistics"]["profit_factor"] = "inf"\n    _write_json(run_dir / "summary.json", summary)
 
     with (run_dir / "trades.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=TRADE_FIELDS)
