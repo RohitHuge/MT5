@@ -209,6 +209,24 @@ def cmd_backtest(args: argparse.Namespace) -> int:
 
     result = run_backtest(m15_candles=m15, m5_candles=m5, config=cfg, symbol_meta=sym_meta)
     print_backtest_report(result, args.symbol, args.from_date, args.to_date)
+
+    from .reporting.exporter import export_backtest_report
+    try:
+        report_dir = export_backtest_report(
+            result=result,
+            symbol=args.symbol,
+            from_date=args.from_date,
+            to_date=args.to_date,
+            config=cfg,
+            symbol_meta=sym_meta,
+            incomplete_m15_windows=agg.incomplete_windows,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to save backtest report")
+        print("ERROR: Backtest completed, but report export failed. See error log above.", file=sys.stderr)
+        return 1
+
+    print(f"  Report saved      : {report_dir}")
     return 0
 
 
