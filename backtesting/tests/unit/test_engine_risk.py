@@ -140,6 +140,32 @@ class TestDailyLossWithOpenPositions:
         assert result.risk_blocked_by_reason.get("RISK_DAILY_LOSS", 0) >= 1
 
 
+class TestStrictDailyLossAdmission:
+    def test_second_trade_is_rejected_when_first_trade_consumes_daily_budget(self):
+        cfg = _risk_cfg(daily_loss_usd=50.0, open_position_action="CLOSE_ALL")
+        candles = [_candle(i) for i in range(8)]
+        first = _make_setup("STRICT_A", "SELL", sl_price=2015.0, rejection_idx=0)
+        second = _make_setup("STRICT_B", "SELL", sl_price=2015.0, rejection_idx=3)
+        # First trade closes at a loss larger than the $50 cap. The daily
+        # manager must lock before considering the second setup.
+        candles[2] = _candle(2, o=2000, h=2016, l=1999, c=2015)
+        result = _run([first, second], candles, cfg)
+        assert result.trades_opened == 1
+        assert result.closed_positions[0].exit_reason == "SL"
+        assert result.risk_summary["final_state"] == RiskState.DAILY_LOSS_REACHED.value
+        assert result.risk_blocked_by_reason.get("RISK_DAILY_LOSS", 0) >= 1
+
+    def test_entry_risk_cannot_exceed_remaining_daily_budget(self):
+        cfg = _risk_cfg(daily_loss_usd=50.0, open_position_action="STOP_NEW_ENTRIES")
+        candles = [_candle(i) for i in range(8)]
+        # One setup has a planned monetary risk above the entire $50 daily
+        # allowance, so admission must reject it before sending a fill.
+        setup = _make_setup("STRICT_BUDGET", "SELL", sl_price=2015.0, rejection_idx=1)
+        result = _run([setup], candles, cfg)
+        assert result.trades_opened == 0
+        assert result.risk_blocked_by_reason.get("DAILY_RISK_BUDGET_EXCEEDED", 0) == 1
+
+
 class TestDailyTargetWithOpenPositions:
     def test_close_all_locks_in_profit(self):
         """Floating profit crossing the daily target force-closes the open
