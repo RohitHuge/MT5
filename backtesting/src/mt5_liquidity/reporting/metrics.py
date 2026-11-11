@@ -62,6 +62,9 @@ def _print_stats(s: LedgerStats) -> None:
     print(f"  Avg loss (net)    : ${s.avg_loss:,.2f}")
     print(f"  Max drawdown      : ${s.max_drawdown_usd:,.2f} ({s.max_drawdown_pct:.2f}%)")
     print(f"  Final equity      : ${s.final_equity:,.2f}")
+    if s.total_trades:
+        print(f"  Avg MAE / MFE     : ${s.avg_mae_usd:,.2f} / ${s.avg_mfe_usd:,.2f}"
+              f"  (worst ${s.worst_mae_usd:,.2f}, best ${s.best_mfe_usd:,.2f})")
     print()
 
 

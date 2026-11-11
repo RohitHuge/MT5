@@ -33,6 +33,11 @@ class TradeGroupStats:
     avg_win: float = 0.0
     avg_loss: float = 0.0
     profit_factor: float = 0.0       # gross_profit / |gross_loss|; inf when no losses
+    # Phase 4 M2: intratrade excursion aggregates (USD; 0.0 for empty groups).
+    avg_mae_usd: float = 0.0         # mean per-trade MAE (<= 0)
+    avg_mfe_usd: float = 0.0         # mean per-trade MFE (>= 0)
+    worst_mae_usd: float = 0.0       # most negative single-trade MAE
+    best_mfe_usd: float = 0.0        # largest single-trade MFE
 
     def rounded(self, digits: int = 2) -> "TradeGroupStats":
         return TradeGroupStats(
@@ -50,6 +55,10 @@ class TradeGroupStats:
             avg_loss=round(self.avg_loss, digits),
             profit_factor=self.profit_factor if self.profit_factor == float("inf")
             else round(self.profit_factor, 4),
+            avg_mae_usd=round(self.avg_mae_usd, digits),
+            avg_mfe_usd=round(self.avg_mfe_usd, digits),
+            worst_mae_usd=round(self.worst_mae_usd, digits),
+            best_mfe_usd=round(self.best_mfe_usd, digits),
         )
 
 
@@ -73,7 +82,11 @@ class DurationAnalytics:
     same_candle_closes: int                  # close_ts on the fill candle (bars_held == 0)
     winners: TradeGroupStats = field(default_factory=TradeGroupStats)
     losers: TradeGroupStats = field(default_factory=TradeGroupStats)
-    mae_mfe: str = "unavailable (no intratrade bar-path observations in Phase 2)"
+    mae_mfe: str = (
+        "available: per-trade bar-close extremes via executable_exit_price "
+        "(spread and exit slippage included; entry-candle exits, risk and "
+        "forced closures included)"
+    )
 
 
 @dataclass

@@ -27,6 +27,12 @@ class LedgerStats:
     max_consecutive_wins: int = 0
     max_consecutive_losses: int = 0
     cost_note: str = "swap excluded; profit factor is gross (pre-commission)"
+    # Phase 4 M2: intratrade excursion aggregates (USD). avg over trades;
+    # worst_mae is the most negative single-trade MAE; best_mfe the largest.
+    avg_mae_usd: float = 0.0
+    avg_mfe_usd: float = 0.0
+    worst_mae_usd: float = 0.0
+    best_mfe_usd: float = 0.0
 
 
 @dataclass
@@ -81,6 +87,11 @@ class TradeLedger:
             max_wins = max(max_wins, current_wins)
             max_losses = max(max_losses, current_losses)
 
+        avg_mae = sum(t.mae_usd for t in trades) / total
+        avg_mfe = sum(t.mfe_usd for t in trades) / total
+        worst_mae = min(t.mae_usd for t in trades)
+        best_mfe = max(t.mfe_usd for t in trades)
+
         return LedgerStats(
             total_trades=total, winners=len(wins), losers=len(losses),
             win_rate=len(wins) / total, gross_profit=round(gross_profit, 2),
@@ -91,4 +102,6 @@ class TradeLedger:
             max_drawdown_usd=round(max_dd_usd, 2), max_drawdown_pct=round(max_dd_pct, 4),
             final_equity=round(self.initial_equity + net_pnl, 2),
             max_consecutive_wins=max_wins, max_consecutive_losses=max_losses,
+            avg_mae_usd=round(avg_mae, 2), avg_mfe_usd=round(avg_mfe, 2),
+            worst_mae_usd=round(worst_mae, 2), best_mfe_usd=round(best_mfe, 2),
         )
