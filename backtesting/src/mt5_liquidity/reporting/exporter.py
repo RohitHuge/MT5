@@ -30,7 +30,7 @@ TRADE_FIELDS = [
 ]
 
 ANALYTICS_SCHEMA_VERSION = 1
-REPORT_SCHEMA_VERSION = 2
+REPORT_SCHEMA_VERSION = 3
 ANALYTICS_FILES = (
     "duration_analysis.csv",
     "hourly_performance.csv",
@@ -41,6 +41,14 @@ ANALYTICS_FILES = (
     "mark_to_market_equity.csv",
     "analytics_summary.json",
 )
+RISK_FILES = ("risk_events.csv",)
+
+RISK_EVENT_FIELDS = [
+    "timestamp_utc", "event_type", "state", "reason", "realised_equity",
+    "floating_pnl", "mtm_equity", "daily_pnl", "threshold_value",
+    "observed_value", "peak_equity", "floor_equity", "open_positions",
+    "affected_positions", "action",
+]
 
 
 def _json_default(value: Any) -> Any:
@@ -279,6 +287,7 @@ def export_backtest_report(
         "trades_opened": result.trades_opened,
         "force_closed": result.force_closed,
         "statistics": asdict(stats),
+        "risk": result.risk_summary,
     }
     # JSON has no standard Infinity value; store a stable string for zero-loss runs.
     if summary["statistics"]["profit_factor"] == float("inf"):
@@ -297,6 +306,29 @@ def export_backtest_report(
         writer = csv.writer(handle)
         writer.writerow(["timestamp_utc", "equity"])
         writer.writerows((ts.isoformat(), equity) for ts, equity in result.equity_curve)
+
+    # Phase 3: structured risk-event log (one row per protection event).
+    with (run_dir / "risk_events.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=RISK_EVENT_FIELDS)
+        writer.writeheader()
+        for event in result.risk_events:
+            writer.writerow({
+                "timestamp_utc": event.timestamp.isoformat(),
+                "event_type": event.event_type,
+                "state": event.state,
+                "reason": event.reason,
+                "realised_equity": event.realised_equity,
+                "floating_pnl": event.floating_pnl,
+                "mtm_equity": event.mtm_equity,
+                "daily_pnl": event.daily_pnl if event.daily_pnl is not None else "",
+                "threshold_value": event.threshold_value if event.threshold_value is not None else "",
+                "observed_value": event.observed_value if event.observed_value is not None else "",
+                "peak_equity": event.peak_equity if event.peak_equity is not None else "",
+                "floor_equity": event.floor_equity if event.floor_equity is not None else "",
+                "open_positions": event.open_positions,
+                "affected_positions": ";".join(event.affected_positions),
+                "action": event.action,
+            })
 
     config_payload = asdict(config)
     # Never persist MT5 secrets, even if a caller has populated them in config.
@@ -337,6 +369,13 @@ def export_backtest_report(
         "position_sizing_rejections": [
             asdict(item) for item in result.rejected_sizings
         ],
+        "risk": {
+            "enabled": config.account_risk.enabled,
+            "open_position_action": config.account_risk.open_position_action,
+            "daily_reset_timezone": config.account_risk.daily_reset_timezone,
+            "note": "Account-level protection settings; thresholds are "
+                    "experimental inputs, not recommended parameters.",
+        },
     }
     _write_json(run_dir / "metadata.json", metadata)
 
@@ -355,7 +394,7 @@ def export_backtest_report(
 
     expected_files = (
         "summary.json", "trades.csv", "equity_curve.csv", "metadata.json",
-        "execution.log",
+        "execution.log", "risk_events.csv",
     )
     missing = [name for name in expected_files if not (run_dir / name).is_file()]
     missing += [

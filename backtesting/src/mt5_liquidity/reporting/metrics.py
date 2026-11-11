@@ -96,3 +96,30 @@ def print_analytics_summary(bundle: AnalyticsBundle) -> None:
     print(f"  MTM max drawdown  : ${dd.max_drawdown_usd:,.2f} ({dd.max_drawdown_pct:.2f}%)"
           "  [mark-to-market]")
     print()
+
+
+def print_risk_summary(result: BacktestResult) -> None:
+    """Account-risk manager highlights (Phase 3). Silent when disabled."""
+    risk = result.risk_summary
+    if not risk.get("enabled"):
+        return
+    console.print_header("ACCOUNT RISK (Phase 3)")
+    print(f"  Final state       : {risk.get('final_state', 'ACTIVE')}")
+    locks = risk.get("locks_triggered") or []
+    print(f"  Protections hit   : {', '.join(locks) if locks else 'none'}")
+    blocked = risk.get("blocked_by_reason") or {}
+    if blocked:
+        detail = ", ".join(f"{k}={v}" for k, v in blocked.items())
+        print(f"  Blocked entries   : {result.setups_skipped_risk} ({detail})")
+    else:
+        print(f"  Blocked entries   : {result.setups_skipped_risk}")
+    print(f"  Forced closures   : {risk.get('forced_closures', 0)}")
+    peak = risk.get("peak_equity")
+    floor = risk.get("floor_equity")
+    if peak is not None:
+        floor_txt = f"${floor:,.2f}" if floor is not None else "n/a"
+        print(f"  Equity peak/floor : ${peak:,.2f} / {floor_txt}")
+    print(f"  Loss streak       : {risk.get('loss_streak', 0)}")
+    print("  Note              : protection settings are experimental inputs,"
+          " not proven parameters")
+    print()

@@ -16,6 +16,7 @@ from .execution import FillResult, compute_fill_price, simulate_fill
 from .ledger import LedgerStats, TradeLedger
 from .positions import ClosedPosition, OpenPosition, PositionStatus
 from ..risk.position_sizing import SizingResult, calculate_position_size
+from ..risk.account_risk import RISK_EXIT_REASONS, RiskEvent, build_account_risk_manager
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,11 @@ class BacktestResult:
     equity_curve: list[tuple[datetime, float]]
     rejected_sizings: list[SizingResult]
     mark_to_market_curve: list[MarkToMarketPoint] = field(default_factory=list)
+    # Phase 3: account-risk outputs (defaulted for backward compatibility).
+    setups_skipped_risk: int = 0
+    risk_blocked_by_reason: dict[str, int] = field(default_factory=dict)
+    risk_events: list[RiskEvent] = field(default_factory=list)
+    risk_summary: dict = field(default_factory=dict)
 
 
 def run_backtest(
@@ -111,9 +117,15 @@ def run_backtest(
     mark_to_market_curve: list[MarkToMarketPoint] = []
     day_start_equity: dict[date, float] = {}
 
+    # Phase 3: one account-risk manager per run. When disabled the engine
+    # keeps its legacy inline daily-loss guard and the legacy behaviour is
+    # bit-for-bit unchanged.
+    risk = build_account_risk_manager(config)
+
     counters = {
         "skipped_max_pos": 0, "skipped_daily_loss": 0, "skipped_sizing": 0,
         "skipped_no_next_bar": 0, "trades_opened": 0, "force_closed": 0,
+        "skipped_risk": 0, "risk_force_closed": 0,
     }
     rejected_sizings: list[SizingResult] = []
     candle_entry_consumed: set[int] = set()
@@ -137,11 +149,39 @@ def run_backtest(
                 ledger.record(closed)
                 equity += closed.net_pnl_usd
                 equity_curve.append((candle.timestamp, equity))
+                if risk is not None:
+                    risk.on_trade_closed(
+                        candle.timestamp, closed.net_pnl_usd, realised_equity=equity)
         open_positions = still_open
 
-        # A new UTC day baseline is the account's mark-to-market equity at
-        # this first available candle: realised equity plus overnight floating P&L.
-        if candle_date not in day_start_equity:
+        # Phase 3: account-risk supervision. Evaluated after this candle's
+        # mark-to-market valuation and before any new entry is admitted, so a
+        # same-candle exit/new-entry sequence cannot bypass a fresh lock.
+        if risk is not None:
+            floating_now = sum(pos.unrealized_pnl(candle) for pos in open_positions)
+            risk.on_candle(
+                candle.timestamp, realised_equity=equity, floating_pnl=floating_now,
+                open_positions=len(open_positions))
+            if risk.close_all_requested() and open_positions:
+                exit_reason = RISK_EXIT_REASONS[risk.state]
+                risk_closed: list[ClosedPosition] = []
+                for pos in open_positions:
+                    commission = 2.0 * config.commission_usd * pos.fill.lots
+                    closed = pos.close(
+                        pos.executable_exit_price(candle.close), idx,
+                        candle.timestamp, exit_reason, commission)
+                    ledger.record(closed)
+                    equity += closed.net_pnl_usd
+                    equity_curve.append((candle.timestamp, equity))
+                    risk_closed.append(closed)
+                    counters["risk_force_closed"] += 1
+                risk.record_forced_closures(candle.timestamp, risk_closed, equity)
+                open_positions = []
+
+        # Legacy path only: a new UTC day baseline is the account's
+        # mark-to-market equity at this first available candle. When the risk
+        # manager is enabled it owns the daily baseline instead.
+        if risk is None and candle_date not in day_start_equity:
             opening_floating = sum(pos.unrealized_pnl(candle) for pos in open_positions)
             day_start_equity[candle_date] = equity + opening_floating
 
@@ -153,15 +193,27 @@ def run_backtest(
                 counters["skipped_max_pos"] += 1
                 continue
 
-            day_baseline = day_start_equity[candle_date]
             unrealised = sum(pos.unrealized_pnl(candle) for pos in open_positions)
-            current_equity = equity + unrealised
-            daily_loss_usd = current_equity - day_baseline
-            if daily_loss_usd < 0 and day_baseline > 0:
-                daily_loss_pct = abs(daily_loss_usd) / day_baseline * 100.0
-                if daily_loss_pct >= config.max_daily_loss_pct:
-                    counters["skipped_daily_loss"] += 1
+            if risk is not None:
+                # Phase 3: every new trade passes the account-risk gate.
+                decision = risk.evaluate_entry(
+                    candle.timestamp, realised_equity=equity, floating_pnl=unrealised)
+                if not decision.allowed:
+                    counters["skipped_risk"] += 1
+                    logger.debug(
+                        "Blocked %s — %s (state=%s)", setup.setup_id,
+                        decision.reason_code, decision.state.value)
                     continue
+            else:
+                # Legacy inline daily-loss guard (unchanged behaviour).
+                day_baseline = day_start_equity[candle_date]
+                current_equity = equity + unrealised
+                daily_loss_usd = current_equity - day_baseline
+                if daily_loss_usd < 0 and day_baseline > 0:
+                    daily_loss_pct = abs(daily_loss_usd) / day_baseline * 100.0
+                    if daily_loss_pct >= config.max_daily_loss_pct:
+                        counters["skipped_daily_loss"] += 1
+                        continue
 
             fill_candle = candle
             actual_fill_price = compute_fill_price(
@@ -197,6 +249,22 @@ def run_backtest(
                 rejected_sizings.append(sizing)
                 continue
 
+            if risk is not None:
+                # Phase 3: per-trade monetary risk ceiling on the sized trade.
+                # A violation is a trade-level rejection, not an account lock.
+                actual_risk_usd = (sizing.lots * sizing.sl_points
+                                   * sizing.value_per_point_per_lot)
+                trade_gate = risk.check_trade_risk(
+                    candle.timestamp, proposed_risk_usd=actual_risk_usd,
+                    current_equity=equity + unrealised)
+                if not trade_gate.allowed:
+                    counters["skipped_risk"] += 1
+                    logger.debug(
+                        "Blocked %s — %s (risk %.2f > %.2f)", setup.setup_id,
+                        trade_gate.reason_code, actual_risk_usd,
+                        trade_gate.threshold_value or 0.0)
+                    continue
+
             fill = simulate_fill(
                 setup_id=setup.setup_id, direction=setup.direction,
                 signal_candle_index=setup.retest.rejection_candle_index,
@@ -224,6 +292,9 @@ def run_backtest(
                 ledger.record(closed)
                 equity += closed.net_pnl_usd
                 equity_curve.append((candle.timestamp, equity))
+                if risk is not None:
+                    risk.on_trade_closed(
+                        candle.timestamp, closed.net_pnl_usd, realised_equity=equity)
             else:
                 open_positions.append(position)
 
@@ -260,4 +331,8 @@ def run_backtest(
         force_closed=counters["force_closed"], stats=stats,
         equity_curve=equity_curve, rejected_sizings=rejected_sizings,
         mark_to_market_curve=mark_to_market_curve,
+        setups_skipped_risk=counters["skipped_risk"],
+        risk_blocked_by_reason=dict(risk.blocked_by_reason) if risk else {},
+        risk_events=list(risk.events) if risk else [],
+        risk_summary=risk.summary() if risk else {"enabled": False},
     )

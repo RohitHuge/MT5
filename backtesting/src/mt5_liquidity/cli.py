@@ -147,6 +147,30 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     cfg.max_daily_loss_pct = args.max_daily_loss_pct
     cfg.initial_equity = args.equity
 
+    # Phase 3: optional account-risk manager activation via CLI. getattr
+    # defaults keep cmd_backtest callable with hand-built argument namespaces
+    # (tests, tooling) that predate these flags.
+    from .config import AccountRiskConfig, validate_account_risk_config
+    cfg.account_risk = AccountRiskConfig(
+        enabled=getattr(args, "account_risk", False),
+        daily_target_usd=getattr(args, "daily_target_usd", None),
+        daily_target_pct=getattr(args, "daily_target_pct", None),
+        daily_loss_usd=getattr(args, "daily_loss_usd", None),
+        daily_loss_pct=getattr(args, "daily_loss_pct", None),
+        equity_trail_giveback_usd=getattr(args, "equity_trail_giveback_usd", None),
+        equity_trail_giveback_pct=getattr(args, "equity_trail_giveback_pct", None),
+        max_drawdown_usd=getattr(args, "max_drawdown_usd", None),
+        max_drawdown_pct=getattr(args, "max_drawdown_pct", None),
+        max_consecutive_losses=getattr(args, "max_consecutive_losses", None),
+        max_risk_per_trade_usd=getattr(args, "max_risk_per_trade_usd", None),
+        max_risk_per_trade_pct=getattr(args, "max_risk_per_trade_pct", None),
+        open_position_action=getattr(args, "open_position_action", "STOP_NEW_ENTRIES"),
+    )
+    risk_error = validate_account_risk_config(cfg.account_risk)
+    if risk_error:
+        print(f"ERROR: Invalid account-risk configuration — {risk_error}", file=sys.stderr)
+        return 1
+
     from_dt = _parse_date(args.from_date)
     to_dt = _parse_date(args.to_date)
     cache = CandleCache(cfg.cache_dir)
@@ -218,8 +242,10 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     result = run_backtest(m15_candles=m15, m5_candles=m5, config=cfg, symbol_meta=sym_meta)
     print_backtest_report(result, args.symbol, args.from_date, args.to_date)
 
+    from .reporting.metrics import print_analytics_summary, print_risk_summary
+    print_risk_summary(result)
+
     from .reporting.analytics import build_analytics_bundle
-    from .reporting.metrics import print_analytics_summary
     bundle = build_analytics_bundle(result, cfg)
     print_analytics_summary(bundle)
 
@@ -294,6 +320,27 @@ def main() -> None:
     p_bt.add_argument("--max-positions", type=int, default=1)
     p_bt.add_argument("--max-daily-loss-pct", type=float, default=3.0)
     p_bt.add_argument("--equity", type=float, default=10_000.0)
+
+    # Phase 3: account-level risk manager (disabled unless --account-risk).
+    p_bt.add_argument("--account-risk", action="store_true",
+                      help="Enable the account-level risk manager")
+    p_bt.add_argument("--daily-target-usd", type=float, default=None)
+    p_bt.add_argument("--daily-target-pct", type=float, default=None)
+    p_bt.add_argument("--daily-loss-usd", type=float, default=None)
+    p_bt.add_argument("--daily-loss-pct", type=float, default=None,
+                      help="Overrides the legacy max-daily-loss guard when the "
+                           "risk manager is enabled")
+    p_bt.add_argument("--equity-trail-giveback-usd", type=float, default=None)
+    p_bt.add_argument("--equity-trail-giveback-pct", type=float, default=None)
+    p_bt.add_argument("--max-drawdown-usd", type=float, default=None)
+    p_bt.add_argument("--max-drawdown-pct", type=float, default=None)
+    p_bt.add_argument("--max-consecutive-losses", type=int, default=None)
+    p_bt.add_argument("--max-risk-per-trade-usd", type=float, default=None)
+    p_bt.add_argument("--max-risk-per-trade-pct", type=float, default=None)
+    p_bt.add_argument("--open-position-action", type=str,
+                      default="STOP_NEW_ENTRIES",
+                      choices=["STOP_NEW_ENTRIES", "CLOSE_ALL"],
+                      help="Open-position policy when a protection triggers")
 
     args = parser.parse_args()
     dispatch = {
