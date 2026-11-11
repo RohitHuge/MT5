@@ -82,14 +82,14 @@ class OpenPosition:
             raw_open, raw_high, raw_low = candle.open - slip, candle.high - slip, candle.low - slip
             gap_sl = raw_open <= sl
             hit_sl, hit_tp = raw_low <= sl, raw_high >= tp
-            gap_close, sl_exit, tp_exit = raw_open, sl, tp
+            gap_close, sl_exit, tp_exit = raw_open, sl - slip, tp - slip
         else:
             raw_open = candle.open + spread + slip
             raw_high = candle.high + spread + slip
             raw_low = candle.low + spread + slip
             gap_sl = raw_open >= sl
             hit_sl, hit_tp = raw_high >= sl, raw_low <= tp
-            gap_close, sl_exit, tp_exit = raw_open, sl, tp
+            gap_close, sl_exit, tp_exit = raw_open, sl + slip, tp + slip
 
         if gap_sl:
             return PositionStatus.HIT_SL, gap_close
@@ -106,14 +106,16 @@ class OpenPosition:
         slip = self._slippage_price()
         if d == "BUY":
             low, high = candle.low - slip, candle.high - slip
+            sl_exit, tp_exit = self.fill.sl_price - slip, self.fill.tp_price - slip
+            hit_sl, hit_tp = low <= self.fill.sl_price, high >= self.fill.tp_price
         else:
             low, high = candle.low + spread + slip, candle.high + spread + slip
-        hit_sl = low <= self.fill.sl_price
-        hit_tp = high >= self.fill.tp_price
+            sl_exit, tp_exit = self.fill.sl_price + slip, self.fill.tp_price + slip
+            hit_sl, hit_tp = high >= self.fill.sl_price, low <= self.fill.tp_price
         if hit_sl:
-            return PositionStatus.HIT_SL, self.fill.sl_price
+            return PositionStatus.HIT_SL, sl_exit
         if hit_tp:
-            return PositionStatus.HIT_TP, self.fill.tp_price
+            return PositionStatus.HIT_TP, tp_exit
         return PositionStatus.OPEN, 0.0
 
     def unrealized_pnl(self, candle) -> float:
