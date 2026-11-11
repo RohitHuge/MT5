@@ -42,7 +42,8 @@ def test_sell_exit_slippage_increases_executable_ask_and_cost():
 
 def test_buy_stop_is_triggered_using_slippage_adjusted_exit_price():
     pos = make_position("BUY", 5)
-    # Bid low 1990.04 becomes executable bid 1989.99 after slippage.
+    # The executable bid reaches 1989.99; the stop exit then incurs another
+    # adverse 0.05 price-unit fill slippage, so the simulated fill is 1989.95.
     status, price = pos.check_candle(candle(1995, 2000, 1990.04, 1995), 1)
     assert status == PositionStatus.HIT_SL
-    assert price == pytest.approx(1990.0)
+    assert price == pytest.approx(1989.95)
