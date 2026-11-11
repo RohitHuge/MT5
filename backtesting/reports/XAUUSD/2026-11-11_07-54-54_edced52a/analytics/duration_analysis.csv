@@ -1,0 +1,7 @@
+bucket,min_minutes,max_minutes,trade_count,winners,losers,breakeven,win_rate,gross_profit,gross_loss,net_pnl,total_commission,avg_net_pnl,avg_win,avg_loss,profit_factor,mae_mfe
+0-5m,0.0,5.0,2,0,2,0,0.0,0.0,-98.1,-98.1,0.0,-49.05,0.0,-49.05,0.0,unavailable (no intratrade bar-path observations in Phase 2)
+5-15m,5.0,15.0,1,0,1,0,0.0,0.0,-6.89,-6.89,0.0,-6.89,0.0,-6.89,0.0,unavailable (no intratrade bar-path observations in Phase 2)
+15-30m,15.0,30.0,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,unavailable (no intratrade bar-path observations in Phase 2)
+30-60m,30.0,60.0,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,unavailable (no intratrade bar-path observations in Phase 2)
+60-120m,60.0,120.0,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,unavailable (no intratrade bar-path observations in Phase 2)
+120m+,120.0,,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,unavailable (no intratrade bar-path observations in Phase 2)
