@@ -263,7 +263,7 @@ def run_backtest(
                     candle.timestamp, proposed_risk_usd=actual_risk_usd,
                     current_equity=equity + unrealised)
                 daily_budget_gate = risk.check_daily_risk_budget(
-                    candle.timestamp, proposed_risk_usd=actual_risk_usd,
+                    ts=candle.timestamp, proposed_risk_usd=actual_risk_usd,
                     realised_equity=equity, floating_pnl=unrealised)
                 if not trade_gate.allowed or not daily_budget_gate.allowed:
                     counters["skipped_risk"] += 1
