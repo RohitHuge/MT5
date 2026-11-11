@@ -1,0 +1,6 @@
+session,trade_count,winners,losers,breakeven,win_rate,gross_profit,gross_loss,net_pnl,total_commission,avg_net_pnl,avg_win,avg_loss,profit_factor
+TOKYO,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+LONDON,1,0,1,0,0.0,0,-49.6,-49.6,0.0,-49.6,0.0,-49.6,0.0
+NEW_YORK,2,0,2,0,0.0,0,-55.39,-55.39,0.0,-27.7,0.0,-27.7,0.0
+LONDON_NY_OVERLAP,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+OFF_SESSION,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0

@@ -1,0 +1,141 @@
+{
+  "analytics": {
+    "attribution": "Duration: per trade from fill_ts/close_ts. Hourly: entry hour (UTC canonical; display hour is a separate column; exit-hour analysis not included in Phase 2). Sessions: primary entry-session classification, mutually exclusive with precedence LONDON_NY_OVERLAP > LONDON > NEW_YORK > TOKYO > OFF_SESSION. Daily/weekly/monthly: realised cash-flow metrics by close_ts (exit date); entry-cohort columns (entry_trade_count, entry_net_pnl) by fill_ts. Weekly grouping uses ISO year + ISO week. All boundaries are UTC.",
+    "display_timezone": "UTC",
+    "schema_version": 1,
+    "sessions": [
+      {
+        "end": "15:00",
+        "name": "TOKYO",
+        "start": "09:00",
+        "timezone": "Asia/Tokyo"
+      },
+      {
+        "end": "17:00",
+        "name": "LONDON",
+        "start": "08:00",
+        "timezone": "Europe/London"
+      },
+      {
+        "end": "17:00",
+        "name": "NEW_YORK",
+        "start": "08:00",
+        "timezone": "America/New_York"
+      }
+    ],
+    "timezone_policy": "UTC"
+  },
+  "config": {
+    "account_risk": {
+      "daily_loss_pct": 0.5,
+      "daily_loss_usd": null,
+      "daily_reset_timezone": "UTC",
+      "daily_target_pct": 0.5,
+      "daily_target_usd": null,
+      "enabled": true,
+      "equity_trail_giveback_pct": 1.0,
+      "equity_trail_giveback_usd": null,
+      "max_consecutive_losses": 5,
+      "max_drawdown_pct": null,
+      "max_drawdown_usd": null,
+      "max_risk_per_trade_pct": null,
+      "max_risk_per_trade_usd": null,
+      "open_position_action": "CLOSE_ALL"
+    },
+    "analytics_display_timezone": "UTC",
+    "cache_dir": "data/processed",
+    "commission_usd": 0.0,
+    "duration_bucket_minutes": null,
+    "exit_slippage_points": 0,
+    "initial_equity": 10000.0,
+    "log_dir": "logs",
+    "max_daily_loss_pct": 3.0,
+    "max_lots_per_trade": 1.0,
+    "max_positions": 1,
+    "min_stop_distance_points": 5.0,
+    "mss_timeout_bars": 20,
+    "mt5_path": "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
+    "mt5_server": "",
+    "pivot_left": 2,
+    "pivot_right": 2,
+    "raw_dir": "data/raw",
+    "retest_band_points": 5,
+    "retest_timeout_bars": 10,
+    "risk_pct": 0.5,
+    "rr_target": 2.0,
+    "session_overrides": null,
+    "sl_buffer_points": 5,
+    "slippage_points": 3,
+    "spread_points": 21,
+    "sweep_min_points": 5,
+    "symbol": "XAUUSD",
+    "zone_tolerance_points": 10
+  },
+  "cost_assumptions": {
+    "commission_usd_per_lot_per_side": 0.0,
+    "note": "swap excluded; profit factor is gross (pre-commission)",
+    "slippage_points": 3,
+    "spread_points": 21,
+    "swap": "excluded"
+  },
+  "data_quality": {
+    "incomplete_m15_windows": [
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-28T22:00:00+00:00"
+      },
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-29T10:00:00+00:00"
+      },
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-29T11:00:00+00:00"
+      },
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-29T13:00:00+00:00"
+      },
+      {
+        "expected": 3,
+        "got": 2,
+        "window_start": "2026-09-29T16:15:00+00:00"
+      }
+    ]
+  },
+  "date_range": {
+    "from": "2026-08-13",
+    "to": "2026-11-10"
+  },
+  "generated_at_utc": "2026-11-11T08:43:13.800588+00:00",
+  "position_sizing_rejections": [
+    {
+      "lots": 0.0,
+      "rejection_reason": "Stop-loss is on the wrong side of executable fill (gap through stop)",
+      "risk_amount": 49.509499999999996,
+      "sl_points": 802.0000000000437,
+      "value_per_point_per_lot": 1.0
+    }
+  ],
+  "risk": {
+    "daily_reset_timezone": "UTC",
+    "enabled": true,
+    "note": "Account-level protection settings; thresholds are experimental inputs, not recommended parameters.",
+    "open_position_action": "CLOSE_ALL"
+  },
+  "run_id": "2026-11-11_08-43-13_5b7a196a",
+  "schema_version": 3,
+  "symbol": "XAUUSD",
+  "symbol_metadata": {
+    "point": 0.01,
+    "tick_size": 0.01,
+    "tick_value": 1.0,
+    "volume_max": 100.0,
+    "volume_min": 0.01,
+    "volume_step": 0.01
+  }
+}

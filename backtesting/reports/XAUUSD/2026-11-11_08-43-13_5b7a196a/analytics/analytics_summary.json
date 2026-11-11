@@ -1,0 +1,139 @@
+{
+  "attribution": "Duration: per trade from fill_ts/close_ts. Hourly: entry hour (UTC canonical; display hour is a separate column; exit-hour analysis not included in Phase 2). Sessions: primary entry-session classification, mutually exclusive with precedence LONDON_NY_OVERLAP > LONDON > NEW_YORK > TOKYO > OFF_SESSION. Daily/weekly/monthly: realised cash-flow metrics by close_ts (exit date); entry-cohort columns (entry_trade_count, entry_net_pnl) by fill_ts. Weekly grouping uses ISO year + ISO week. All boundaries are UTC.",
+  "display_timezone": "UTC",
+  "duration_summary": {
+    "avg_duration_minutes": 3.33,
+    "losers": {
+      "avg_loss": -35.0,
+      "avg_net_pnl": -35.0,
+      "avg_win": 0.0,
+      "breakeven": 0,
+      "gross_loss": -104.99,
+      "gross_profit": 0,
+      "losers": 3,
+      "net_pnl": -104.99,
+      "profit_factor": 0.0,
+      "total_commission": 0.0,
+      "trade_count": 3,
+      "win_rate": 0.0,
+      "winners": 0
+    },
+    "mae_mfe": "unavailable (no intratrade bar-path observations in Phase 2)",
+    "max_duration_minutes": 10.0,
+    "median_duration_minutes": 0.0,
+    "min_duration_minutes": 0.0,
+    "same_candle_closes": 2,
+    "winners": {
+      "avg_loss": 0.0,
+      "avg_net_pnl": 0.0,
+      "avg_win": 0.0,
+      "breakeven": 0,
+      "gross_loss": 0.0,
+      "gross_profit": 0.0,
+      "losers": 0,
+      "net_pnl": 0.0,
+      "profit_factor": 0.0,
+      "total_commission": 0.0,
+      "trade_count": 0,
+      "win_rate": 0.0,
+      "winners": 0
+    }
+  },
+  "headline": {
+    "avg_duration_minutes": 3.3,
+    "best_hour_net_pnl": -6.89,
+    "best_hour_utc": 19,
+    "best_session": "LONDON",
+    "best_session_net_pnl": -49.6,
+    "losing_days": 2,
+    "median_duration_minutes": 0.0,
+    "mtm_max_drawdown_pct": 1.0499,
+    "mtm_max_drawdown_usd": 104.99,
+    "profitable_day_pct": 0.0,
+    "profitable_days": 0,
+    "same_candle_closes": 2,
+    "worst_hour_net_pnl": -49.6,
+    "worst_hour_utc": 8,
+    "worst_session": "NEW_YORK",
+    "worst_session_net_pnl": -55.39
+  },
+  "mark_to_market_drawdown": {
+    "max_drawdown_pct": 1.0499,
+    "max_drawdown_usd": 104.99,
+    "note": "End-of-candle marks only; intrabar drawdown not observable from M5 OHLC.",
+    "peak_equity": 10000.0,
+    "peak_ts": "2026-08-13T01:00:00+00:00",
+    "recovery_ts": null,
+    "trough_equity": 9895.01,
+    "trough_ts": "2026-08-17T20:00:00+00:00",
+    "underwater_minutes": 128095.0
+  },
+  "period_streaks": {
+    "daily": {
+      "flat_periods": 87,
+      "losing_periods": 2,
+      "max_losing_periods": 1,
+      "max_profitable_periods": 0,
+      "profitable_periods": 0
+    },
+    "monthly": {
+      "flat_periods": 3,
+      "losing_periods": 1,
+      "max_losing_periods": 1,
+      "max_profitable_periods": 0,
+      "profitable_periods": 0
+    },
+    "weekly": {
+      "flat_periods": 12,
+      "losing_periods": 2,
+      "max_losing_periods": 2,
+      "max_profitable_periods": 0,
+      "profitable_periods": 0
+    }
+  },
+  "reconciliation": {
+    "counts_reconciled": true,
+    "daily_entry_count_sum": 3,
+    "daily_exit_count_sum": 3,
+    "daily_net_pnl_sum": -104.99,
+    "duration_count_sum": 3,
+    "final_equity_reconciled": true,
+    "final_mtm_equity": 9895.01,
+    "gross_loss_reconciled": true,
+    "gross_profit_reconciled": true,
+    "hourly_count_sum": 3,
+    "hourly_gross_loss_sum": -104.99,
+    "hourly_gross_profit_sum": 0.0,
+    "ledger_final_equity": 9895.01,
+    "ledger_gross_loss": -104.99,
+    "ledger_gross_profit": 0,
+    "ledger_net_pnl": -104.99,
+    "monthly_net_pnl_sum": -104.99,
+    "net_pnl_reconciled": true,
+    "session_count_sum": 3,
+    "total_trades": 3,
+    "weekly_net_pnl_sum": -104.99
+  },
+  "schema_version": 1,
+  "sessions": [
+    {
+      "end": "15:00",
+      "name": "TOKYO",
+      "start": "09:00",
+      "timezone": "Asia/Tokyo"
+    },
+    {
+      "end": "17:00",
+      "name": "LONDON",
+      "start": "08:00",
+      "timezone": "Europe/London"
+    },
+    {
+      "end": "17:00",
+      "name": "NEW_YORK",
+      "start": "08:00",
+      "timezone": "America/New_York"
+    }
+  ],
+  "timezone_policy": "UTC"
+}
