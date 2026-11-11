@@ -91,6 +91,22 @@ def validate_symbol_meta(meta: SymbolMeta, symbol: str = "") -> str | None:
 
 
 @dataclass
+class MarkToMarketPoint:
+    """End-of-candle account observation including floating P&L.
+
+    realised_equity : equity after all closed trades up to this candle
+    floating_pnl    : sum of unrealised P&L of positions open at candle close
+    mtm_equity      : realised_equity + floating_pnl (mark-to-market)
+    open_positions  : number of positions open at candle close
+    """
+    timestamp: datetime
+    realised_equity: float
+    floating_pnl: float
+    mtm_equity: float
+    open_positions: int
+
+
+@dataclass
 class BacktestResult:
     setups_total: int
     setups_entry_ready: int
@@ -104,6 +120,9 @@ class BacktestResult:
     stats: LedgerStats
     equity_curve: list[tuple[datetime, float]]   # (candle_ts, equity_after_close)
     rejected_sizings: list[SizingResult]
+    # Phase 2: end-of-candle mark-to-market observations (default keeps
+    # existing constructor call sites working).
+    mark_to_market_curve: list[MarkToMarketPoint] = field(default_factory=list)
 
 
 def run_backtest(
@@ -157,6 +176,7 @@ def run_backtest(
     ledger = TradeLedger(initial_equity=initial_equity)
     open_positions: list[OpenPosition] = []
     equity_curve: list[tuple[datetime, float]] = []
+    mark_to_market_curve: list[MarkToMarketPoint] = []
 
     # Daily loss tracking
     day_start_equity: dict[date, float] = {}
@@ -336,6 +356,17 @@ def run_backtest(
             else:
                 open_positions.append(new_pos)
 
+        # Phase 2: end-of-candle mark-to-market observation. Uses only this
+        # candle's close and positions known at this point — no future data.
+        floating = sum(pos.unrealized_pnl(candle) for pos in open_positions)
+        mark_to_market_curve.append(MarkToMarketPoint(
+            timestamp=candle.timestamp,
+            realised_equity=equity,
+            floating_pnl=floating,
+            mtm_equity=equity + floating,
+            open_positions=len(open_positions),
+        ))
+
     # 3. Force-close remaining open positions at last candle close
     if m5_candles and open_positions:
         last_candle = m5_candles[-1]
@@ -354,6 +385,16 @@ def run_backtest(
             counters["force_closed"] += 1
             logger.info("Force-closed %s net=%.2f", closed.setup_id, closed.net_pnl_usd)
 
+        # Final MTM point after force-closes: floating P&L is zero and the
+        # observation reconciles with ledger final_equity.
+        mark_to_market_curve.append(MarkToMarketPoint(
+            timestamp=last_candle.timestamp,
+            realised_equity=equity,
+            floating_pnl=0.0,
+            mtm_equity=equity,
+            open_positions=0,
+        ))
+
     stats = ledger.compute_stats()
 
     return BacktestResult(
@@ -369,4 +410,5 @@ def run_backtest(
         stats=stats,
         equity_curve=equity_curve,
         rejected_sizings=rejected_sizings,
+        mark_to_market_curve=mark_to_market_curve,
     )
