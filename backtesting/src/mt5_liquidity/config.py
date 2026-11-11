@@ -49,6 +49,17 @@ class BacktestConfig:
     min_stop_distance_points: float = 5.0
     max_lots_per_trade: float = 1.0
 
+    # Phase 2 analytics
+    # IANA timezone used for the optional local-hour column in hourly analytics.
+    # UTC remains the canonical analytics timezone; this only affects display.
+    analytics_display_timezone: str = "UTC"
+    # Upper edges (minutes) of duration buckets; the final bucket is open-ended.
+    # None -> defaults: 0-5, 5-15, 15-30, 30-60, 60-120, 120+ minutes.
+    duration_bucket_minutes: tuple[int, ...] | None = None
+    # Optional session-window overrides: name -> {"tz", "start", "end"}.
+    # None -> built-in defaults (see reporting.analytics.sessions).
+    session_overrides: dict[str, dict[str, str]] | None = None
+
 
 def load_config(env_path: str | None = None) -> BacktestConfig:
     """Load config with MT5 credentials from .env. All other fields use safe defaults."""
