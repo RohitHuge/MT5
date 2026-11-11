@@ -28,13 +28,27 @@ The risk manager now exposes `daily_loss_remaining(...)` and `check_daily_risk_b
 - `src/mt5_liquidity/risk/account_risk.py`: remaining budget calculation and pre-trade admission check.
 - `src/mt5_liquidity/backtest/engine.py`: risk evaluation moved ahead of candle SL/TP booking; daily risk budget gate added before fills.
 - `tests/unit/test_account_risk.py`: budget calculation, remaining-risk, threshold-fit tests.
-- `tests/unit/test_engine_risk.py`: no-new-entry after daily breach and oversized daily-budget admission tests.
+- `tests/unit/test_engine_risk.py`: no-new-entry after daily breach, oversized daily-budget admission, same-candle lock ordering, forced-close behaviour, and ledger reconciliation tests. The daily-loss engine scenarios now use individually admissible positions (each planned stop risk fits the $50 allowance) and multiple concurrent positions to cross the account-level threshold; the protection logic was not weakened to accommodate the tests.
 
 ## Validation feedback and corrective commit
 
 The first local unit-test run reported **380 passed, 14 failed**. All 14 failures shared one root cause: the engine passed the timestamp positionally to `check_daily_risk_budget`, while that method declares `ts` as keyword-only. This was a call-site defect, not 14 independent risk-rule failures.
 
 Corrective commit: `f23bd239` — the engine now passes `ts=candle.timestamp`. The full unit suite must be rerun to verify this correction. The supplied console output ends immediately after the integration-test command, so no integration-test result is available yet.
+
+## Follow-up test-fixture correction
+
+A subsequent local run reported **388 passed, 6 failed**. The six failures were in engine tests whose fixtures attempted to open a single position with planned stop risk greater than the configured daily-loss allowance (or used a $1 daily allowance against a much larger minimum-lot risk). Those scenarios contradicted the new admission rule.
+
+Commit: `0fe25faf` — the affected tests now use a 0.5% risk setting and a $50 daily limit. They create two positions whose individual planned risks fit the allowance, then move both into a combined floating loss that crosses the daily limit. The tests separately verify:
+
+- `CLOSE_ALL` force-closes both open positions with a risk-specific exit reason.
+- `STOP_NEW_ENTRIES` leaves existing positions under normal SL management.
+- A later entry, including one mapped to the lock-trigger candle, is blocked after the combined loss triggers the lock.
+- Risk-triggered closes are included in the trade ledger and final-equity reconciliation.
+- The dedicated oversized-entry test still rejects a single proposed trade whose risk exceeds the remaining daily budget.
+
+This is a test-fixture correction only; the admission and lock implementation was not changed in this follow-up. The updated tests have **not yet been rerun locally**.
 
 ## Validation still required
 
