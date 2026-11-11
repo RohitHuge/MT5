@@ -1,8 +1,9 @@
 """Console reporting for backtest results. Only this layer uses print()."""
 from __future__ import annotations
 
-from ..backtest.engine import BacktestResult
-from ..backtest.ledger import LedgerStats
+from mt5_liquidity.backtest.engine import BacktestResult
+from mt5_liquidity.backtest.ledger import LedgerStats
+from mt5_liquidity.reporting.analytics import AnalyticsBundle
 from . import console
 
 _DISCLAIMER = (
@@ -61,4 +62,37 @@ def _print_stats(s: LedgerStats) -> None:
     print(f"  Avg loss (net)    : ${s.avg_loss:,.2f}")
     print(f"  Max drawdown      : ${s.max_drawdown_usd:,.2f} ({s.max_drawdown_pct:.2f}%)")
     print(f"  Final equity      : ${s.final_equity:,.2f}")
+    print()
+
+
+def print_analytics_summary(bundle: AnalyticsBundle) -> None:
+    """Concise Phase 2 time-analytics highlights (plan section 2H)."""
+    console.print_header("TIME ANALYTICS (Phase 2)")
+    h = bundle.headline
+
+    if "best_hour_utc" in h:
+        print(f"  Best hour (UTC)   : {h['best_hour_utc']:02d}:00 (${h['best_hour_net_pnl']:+,.2f})")
+        print(f"  Worst hour (UTC)  : {h['worst_hour_utc']:02d}:00 (${h['worst_hour_net_pnl']:+,.2f})")
+    else:
+        print("  Hours             : no closed trades")
+
+    if "best_session" in h:
+        print(f"  Best session      : {h['best_session']} (${h['best_session_net_pnl']:+,.2f})")
+        print(f"  Worst session     : {h['worst_session']} (${h['worst_session_net_pnl']:+,.2f})")
+    else:
+        print("  Sessions          : no closed trades")
+
+    if "profitable_days" in h:
+        print(f"  Profitable days   : {h['profitable_days']} / {h['profitable_days'] + h['losing_days']}"
+              f" ({h['profitable_day_pct']:.1f}%)")
+
+    d = bundle.duration
+    if d and d.avg_duration_minutes is not None:
+        print(f"  Avg duration      : {h['avg_duration_minutes']:.1f} min"
+              f" (median {h['median_duration_minutes']:.1f} min)")
+        print(f"  Same-candle exits : {h['same_candle_closes']}")
+
+    dd = bundle.mtm_drawdown
+    print(f"  MTM max drawdown  : ${dd.max_drawdown_usd:,.2f} ({dd.max_drawdown_pct:.2f}%)"
+          "  [mark-to-market]")
     print()

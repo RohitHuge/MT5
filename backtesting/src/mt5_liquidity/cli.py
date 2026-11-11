@@ -210,6 +210,11 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     result = run_backtest(m15_candles=m15, m5_candles=m5, config=cfg, symbol_meta=sym_meta)
     print_backtest_report(result, args.symbol, args.from_date, args.to_date)
 
+    from .reporting.analytics import build_analytics_bundle
+    from .reporting.metrics import print_analytics_summary
+    bundle = build_analytics_bundle(result, cfg)
+    print_analytics_summary(bundle)
+
     from .reporting.exporter import export_backtest_report
     try:
         report_dir = export_backtest_report(
@@ -220,6 +225,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
             config=cfg,
             symbol_meta=sym_meta,
             incomplete_m15_windows=agg.incomplete_windows,
+            analytics_bundle=bundle,
         )
     except Exception:
         logging.getLogger(__name__).exception("Failed to save backtest report")
@@ -244,6 +250,9 @@ def cmd_backtest(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
+    from .reporting.console import ensure_printable_stdout
+    ensure_printable_stdout()
+
     parser = argparse.ArgumentParser(prog="mt5_liquidity", description="XAUUSD Liquidity Backtester")
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -1,9 +1,28 @@
 """Terminal output helpers. Only this layer uses print()."""
 from __future__ import annotations
 
+import sys
+
 from ..data.candles import Candle
 from ..data.validation import ValidationResult
 from ..strategy.models import LiquidityZone, ZoneStatus
+
+
+def ensure_printable_stdout() -> None:
+    """Never crash the CLI on unencodable characters.
+
+    Windows consoles often default to cp1252 while report headers contain
+    Unicode arrows and dashes (e.g. "→"). Without this, the character-map
+    encode error aborted the CLI after the backtest had already run and
+    before the report was saved. Unencodable characters are replaced with
+    the console's substitution character instead.
+    """
+    try:
+        encoding = (sys.stdout.encoding or "").lower().replace("-", "")
+        if encoding and encoding != "utf8":
+            sys.stdout.reconfigure(errors="replace")
+    except (AttributeError, OSError):
+        pass
 
 
 def print_header(title: str) -> None:
