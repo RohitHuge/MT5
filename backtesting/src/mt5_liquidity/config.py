@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 @dataclass
 class BacktestConfig:
-    mt5_path: str = r"C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+    mt5_path: str = r"C:\Program Files\MetaTrader 5\terminal64.exe"
     mt5_login: int = 0
     mt5_password: str = ""
     mt5_server: str = ""
@@ -45,7 +45,7 @@ def load_config(env_path: str | None = None) -> BacktestConfig:
     else:
         load_dotenv()
     return BacktestConfig(
-        mt5_path=os.getenv("MT5_PATH", r"C:\\Program Files\\MetaTrader 5\\terminal64.exe"),
+        mt5_path=os.getenv("MT5_PATH", r"C:\Program Files\MetaTrader 5\terminal64.exe"),
         mt5_login=int(os.getenv("MT5_LOGIN", "0") or "0"),
         mt5_password=os.getenv("MT5_PASSWORD", ""),
         mt5_server=os.getenv("MT5_SERVER", ""),
