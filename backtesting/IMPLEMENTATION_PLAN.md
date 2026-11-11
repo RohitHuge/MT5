@@ -303,6 +303,16 @@
 - [x] Clearly distinguish a protection-triggered stop from a strategy SL/TP exit.
 - [x] Add report tests ensuring risk events reconcile with blocked entries, forced closures, and final equity.
 
+### Strict daily-loss follow-up (feature branch; validation pending)
+
+- [ ] Evaluate risk before normal candle SL/TP bookkeeping in the OHLC backtest.
+- [ ] Reject new entries whose planned initial-stop risk exceeds the remaining daily loss budget.
+- [ ] Run the full unit and integration suites on `feat/strict-daily-loss-protection`.
+- [ ] Rerun the historical XAUUSD sample with `--daily-loss-usd 50 --open-position-action CLOSE_ALL` and inspect the immutable report.
+- [ ] Keep live tick-level MT5 monitoring, close-order retries/verification, and restart/reconnect fail-closed integration as separate demo-only work; an M5 OHLC backtest cannot validate these behaviours or guarantee a hard realised-loss ceiling.
+
+See `STRICT_DAILY_LOSS_IMPLEMENTATION_REPORT.md`.
+
 ## 3I. Phase 3 acceptance
 
 - [x] Run all unit and integration tests. (2026-11-11: 393 passed.)
