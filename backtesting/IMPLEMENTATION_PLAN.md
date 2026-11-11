@@ -3,7 +3,7 @@
 **Scope:** `/backtesting` only  
 **Repository:** `RohitHuge/MT5`  
 **Target branch:** `main`  
-**Status:** Phase 1 code committed; local verification partially complete (see `PHASE1_IMPLEMENTATION_REPORT.md`). Phase 2 implemented and verified on 2026-11-11 (see `PHASE2_IMPLEMENTATION_REPORT.md`). Phases 3–4 not started.  
+**Status:** Phase 1 code committed (verification partially complete — see `PHASE1_IMPLEMENTATION_REPORT.md`). Phase 2 implemented and verified on 2026-11-11 (see `PHASE2_IMPLEMENTATION_REPORT.md`). Phase 3 implemented and verified on 2026-11-11 (see `PHASE3_IMPLEMENTATION_REPORT.md`). Phase 4 not started.  
 **Purpose:** Correct historical execution first, then add time-based performance analytics, account-level profit protection, and controlled comparative experiments.
 
 ---
@@ -217,100 +217,102 @@
 
 **Goal:** Add a separate account supervisor that decides whether new trades are allowed and what action is required when account-level thresholds are reached.
 
+**Status:** Implemented and verified 2026-11-11 — see `PHASE3_IMPLEMENTATION_REPORT.md`.
+
 ## 3A. Define account-risk configuration
 
-- [ ] Extend `BacktestConfig` with optional account-risk settings while preserving current defaults and existing CLI behaviour.
-- [ ] Add enable/disable flags for daily target, daily loss, equity trailing protection, maximum drawdown, and consecutive-loss guard.
-- [ ] Support monetary and percentage inputs where meaningful; reject ambiguous combinations or define precedence.
-- [ ] Add configurable daily reset timezone and reset boundary.
-- [ ] Add configurable open-position action: `CLOSE_ALL` or `STOP_NEW_ENTRIES`.
-- [ ] Add configuration for whether a daily target/loss lock resets next day and whether an account-wide drawdown lock requires manual reset.
-- [ ] Validate thresholds, percentages, giveback values, and reset policies.
-- [ ] Document that example thresholds are experimental settings, not recommended/proven profitable values.
-- [ ] Add config parsing and validation tests.
+- [x] Extend `BacktestConfig` with optional account-risk settings while preserving current defaults and existing CLI behaviour.
+- [x] Add enable/disable flags for daily target, daily loss, equity trailing protection, maximum drawdown, and consecutive-loss guard.
+- [x] Support monetary and percentage inputs where meaningful; reject ambiguous combinations or define precedence.
+- [x] Add configurable daily reset timezone and reset boundary.
+- [x] Add configurable open-position action: `CLOSE_ALL` or `STOP_NEW_ENTRIES`.
+- [x] Add configuration for whether a daily target/loss lock resets next day and whether an account-wide drawdown lock requires manual reset.
+- [x] Validate thresholds, percentages, giveback values, and reset policies.
+- [x] Document that example thresholds are experimental settings, not recommended/proven profitable values.
+- [x] Add config parsing and validation tests.
 
 ## 3B. Implement risk state and decision model
 
-- [ ] Define typed account-risk states: `ACTIVE`, `DAILY_TARGET_REACHED`, `DAILY_LOSS_REACHED`, `EQUITY_TRAILING_TRIGGERED`, `MAX_DRAWDOWN_TRIGGERED`, `LOSS_STREAK_REACHED`, and `MANUAL_HALT`.
-- [ ] Define a risk decision result containing allowed/blocked status, state, reason code, trigger value, observed value, timestamp, and required action.
-- [ ] Keep the risk manager independent of MT5 APIs and filesystem persistence so it is deterministic and unit-testable.
-- [ ] Define deterministic trigger precedence when more than one threshold is crossed on the same candle.
-- [ ] Define state transition rules, including lock and reset transitions.
-- [ ] Add transition tests for every state, duplicate triggers, and invalid transitions.
+- [x] Define typed account-risk states: `ACTIVE`, `DAILY_TARGET_REACHED`, `DAILY_LOSS_REACHED`, `EQUITY_TRAILING_TRIGGERED`, `MAX_DRAWDOWN_TRIGGERED`, `LOSS_STREAK_REACHED`, and `MANUAL_HALT`.
+- [x] Define a risk decision result containing allowed/blocked status, state, reason code, trigger value, observed value, timestamp, and required action.
+- [x] Keep the risk manager independent of MT5 APIs and filesystem persistence so it is deterministic and unit-testable.
+- [x] Define deterministic trigger precedence when more than one threshold is crossed on the same candle.
+- [x] Define state transition rules, including lock and reset transitions.
+- [x] Add transition tests for every state, duplicate triggers, and invalid transitions.
 
 ## 3C. Implement daily profit and loss controls
 
-- [ ] Track daily starting balance/equity using the configured daily timezone and reset boundary.
-- [ ] Choose and document whether daily profit/loss is measured from realised P&L, equity including floating P&L, or both; account protection should use equity where required.
-- [ ] Trigger daily profit target on the configured realised/equity measure.
-- [ ] Trigger daily loss limit on equity including floating loss, not just closed trades.
-- [ ] Block all new entries after a daily lock.
-- [ ] Apply configured open-position policy after a trigger.
-- [ ] Ensure the next daily reset does not clear an account-wide trailing/max-drawdown lock.
-- [ ] Add tests for exact target/limit boundaries, floating P&L crossing, day rollover, and open positions during rollover.
+- [x] Track daily starting balance/equity using the configured daily timezone and reset boundary.
+- [x] Choose and document whether daily profit/loss is measured from realised P&L, equity including floating P&L, or both; account protection should use equity where required.
+- [x] Trigger daily profit target on the configured realised/equity measure.
+- [x] Trigger daily loss limit on equity including floating loss, not just closed trades.
+- [x] Block all new entries after a daily lock.
+- [x] Apply configured open-position policy after a trigger.
+- [x] Ensure the next daily reset does not clear an account-wide trailing/max-drawdown lock.
+- [x] Add tests for exact target/limit boundaries, floating P&L crossing, day rollover, and open positions during rollover.
 
 ## 3D. Implement account equity trailing protection
 
-- [ ] Track the highest observed account equity (high-water mark) chronologically.
-- [ ] Calculate the trailing protection floor from configured fixed-USD or percentage giveback.
-- [ ] Ensure the floor can only stay constant or rise; it must never fall after a new peak.
-- [ ] Evaluate the trigger using mark-to-market equity on every simulation decision point.
-- [ ] Trigger when equity is at or below the protection floor according to a documented boundary rule.
-- [ ] Capture peak equity, floor, trigger equity, giveback amount, and trigger timestamp in risk events.
-- [ ] Define behaviour when equity reaches a new peak while an open position is active.
-- [ ] Add tests for peak updates, floor monotonicity, exact trigger, floating profit then pullback, and restart/state restoration.
+- [x] Track the highest observed account equity (high-water mark) chronologically.
+- [x] Calculate the trailing protection floor from configured fixed-USD or percentage giveback.
+- [x] Ensure the floor can only stay constant or rise; it must never fall after a new peak.
+- [x] Evaluate the trigger using mark-to-market equity on every simulation decision point.
+- [x] Trigger when equity is at or below the protection floor according to a documented boundary rule.
+- [x] Capture peak equity, floor, trigger equity, giveback amount, and trigger timestamp in risk events.
+- [x] Define behaviour when equity reaches a new peak while an open position is active.
+- [x] Add tests for peak updates, floor monotonicity, exact trigger, floating profit then pullback, and restart/state restoration.
 
 ## 3E. Implement maximum drawdown and loss-streak protection
 
-- [ ] Define maximum drawdown as a percentage or monetary loss from the account high-water mark, separately from trailing giveback if both are enabled.
-- [ ] Prevent duplicate/contradictory triggers between maximum drawdown and equity trailing protection.
-- [ ] Track consecutive losing closed trades using net P&L after configured costs.
-- [ ] Define treatment of zero-P&L trades in a loss streak (recommended: reset or break the streak; make explicit).
-- [ ] Lock new entries when the configured losing-streak limit is reached.
-- [ ] Add tests for win/loss/flat sequences, threshold boundaries, and overlapping trigger conditions.
+- [x] Define maximum drawdown as a percentage or monetary loss from the account high-water mark, separately from trailing giveback if both are enabled.
+- [x] Prevent duplicate/contradictory triggers between maximum drawdown and equity trailing protection.
+- [x] Track consecutive losing closed trades using net P&L after configured costs.
+- [x] Define treatment of zero-P&L trades in a loss streak (recommended: reset or break the streak; make explicit).
+- [x] Lock new entries when the configured losing-streak limit is reached.
+- [x] Add tests for win/loss/flat sequences, threshold boundaries, and overlapping trigger conditions.
 
 ## 3F. Integrate risk decisions with the backtest engine
 
-- [ ] Instantiate one account-risk manager per backtest run.
-- [ ] Evaluate account risk after mark-to-market valuation and before admitting every new setup.
-- [ ] Do not allow a same-candle exit/new-entry sequence to bypass an already-triggered account lock.
-- [ ] Implement `CLOSE_ALL` by simulating each open position's close at the next available executable price under the chosen bar model, spread, slippage, and commission assumptions.
-- [ ] Document the OHLC limitation when exact intrabar trigger/close ordering cannot be known; use a conservative model and record it.
-- [ ] Implement `STOP_NEW_ENTRIES` without accidentally removing existing SL/TP monitoring.
-- [ ] Record each forced closure with a distinct exit reason such as `RISK_DAILY_TARGET`, `RISK_DAILY_LOSS`, `RISK_EQUITY_TRAIL`, `RISK_MAX_DRAWDOWN`, or `RISK_LOSS_STREAK`.
-- [ ] Ensure risk-triggered closures count in net P&L, commissions, equity, and analytics.
-- [ ] Add counters for blocked setups by risk reason and risk-triggered closures.
-- [ ] Add engine integration tests for every trigger with zero, one, and multiple open positions.
+- [x] Instantiate one account-risk manager per backtest run.
+- [x] Evaluate account risk after mark-to-market valuation and before admitting every new setup.
+- [x] Do not allow a same-candle exit/new-entry sequence to bypass an already-triggered account lock.
+- [x] Implement `CLOSE_ALL` by simulating each open position's close at the next available executable price under the chosen bar model, spread, slippage, and commission assumptions.
+- [x] Document the OHLC limitation when exact intrabar trigger/close ordering cannot be known; use a conservative model and record it.
+- [x] Implement `STOP_NEW_ENTRIES` without accidentally removing existing SL/TP monitoring.
+- [x] Record each forced closure with a distinct exit reason such as `RISK_DAILY_TARGET`, `RISK_DAILY_LOSS`, `RISK_EQUITY_TRAIL`, `RISK_MAX_DRAWDOWN`, or `RISK_LOSS_STREAK`.
+- [x] Ensure risk-triggered closures count in net P&L, commissions, equity, and analytics.
+- [x] Add counters for blocked setups by risk reason and risk-triggered closures.
+- [x] Add engine integration tests for every trigger with zero, one, and multiple open positions.
 
 ## 3G. Persist and recover risk state
 
-- [ ] Define a serializable risk-state schema with a version field.
-- [ ] Persist daily baseline, account high-water mark, protection floor, state/lock, loss streak, last processed timestamp, and trigger history.
-- [ ] Validate restored state against account identity/configuration in any future live adapter; never mix accounts.
-- [ ] Make state writes atomic so a partial write cannot corrupt the latest known state.
-- [ ] Define stale-state and missing-state handling; fail safe rather than silently resetting a protective high-water mark.
-- [ ] Add tests for serialization, deserialization, schema migration, corrupt state, stale timestamps, and restart while locked.
-- [ ] Keep secrets and account credentials out of persisted risk state and generated reports.
+- [x] Define a serializable risk-state schema with a version field.
+- [x] Persist daily baseline, account high-water mark, protection floor, state/lock, loss streak, last processed timestamp, and trigger history.
+- [x] Validate restored state against account identity/configuration in any future live adapter; never mix accounts.
+- [x] Make state writes atomic so a partial write cannot corrupt the latest known state.
+- [x] Define stale-state and missing-state handling; fail safe rather than silently resetting a protective high-water mark.
+- [x] Add tests for serialization, deserialization, schema migration, corrupt state, stale timestamps, and restart while locked.
+- [x] Keep secrets and account credentials out of persisted risk state and generated reports.
 
 ## 3H. Risk event reporting and operator visibility
 
-- [ ] Add a structured risk-event model with timestamp, state transition, trigger, observed equity, peak, floor, action, and action result.
-- [ ] Export `risk_events.csv` and a concise risk summary in `summary.json`.
-- [ ] Include risk configuration and reset/timezone policy in `metadata.json`.
-- [ ] Print daily locks, trailing-stop activations, loss-streak locks, and forced-close counts in the console report.
-- [ ] Clearly distinguish a protection-triggered stop from a strategy SL/TP exit.
-- [ ] Add report tests ensuring risk events reconcile with blocked entries, forced closures, and final equity.
+- [x] Add a structured risk-event model with timestamp, state transition, trigger, observed equity, peak, floor, action, and action result.
+- [x] Export `risk_events.csv` and a concise risk summary in `summary.json`.
+- [x] Include risk configuration and reset/timezone policy in `metadata.json`.
+- [x] Print daily locks, trailing-stop activations, loss-streak locks, and forced-close counts in the console report.
+- [x] Clearly distinguish a protection-triggered stop from a strategy SL/TP exit.
+- [x] Add report tests ensuring risk events reconcile with blocked entries, forced closures, and final equity.
 
 ## 3I. Phase 3 acceptance
 
-- [ ] Run all unit and integration tests.
-- [ ] Prove daily target and daily loss include the intended floating/realised P&L measure.
-- [ ] Prove equity trailing floor is monotonic and trigger uses mark-to-market equity.
-- [ ] Prove account-wide locks do not reset at daily rollover unless explicitly configured.
-- [ ] Prove risk-triggered close prices include the configured execution costs.
-- [ ] Prove no new setup can enter after a lock is active.
-- [ ] Prove restart recovery does not lose peak/floor/lock state.
-- [ ] Inspect a historical run where the account reaches a profit peak and subsequently falls; verify the trigger and final result from the event log.
+- [x] Run all unit and integration tests. (2026-11-11: 393 passed.)
+- [x] Prove daily target and daily loss include the intended floating/realised P&L measure.
+- [x] Prove equity trailing floor is monotonic and trigger uses mark-to-market equity.
+- [x] Prove account-wide locks do not reset at daily rollover unless explicitly configured.
+- [x] Prove risk-triggered close prices include the configured execution costs.
+- [x] Prove no new setup can enter after a lock is active.
+- [x] Prove restart recovery does not lose peak/floor/lock state.
+- [x] Inspect a historical run where the account reaches a profit peak and subsequently falls; verify the trigger and final result from the event log. (Report `2026-11-11_07-54-54_edced52a`: trailing trigger at equity $9,895.01 vs floor $9,900, force-close and preserved lock verified from `risk_events.csv`.)
 
 **Phase 3 deliverable:** A deterministic, auditable account-risk manager that can protect accumulated equity in simulation and has a persistence contract suitable for later live integration.
 
