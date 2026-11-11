@@ -160,10 +160,10 @@ def test_analytics_summary_json_schema_and_reconciliation(tmp_path):
     assert summary["mark_to_market_drawdown"]["max_drawdown_usd"] == 20.0
 
 
-def test_metadata_has_analytics_section_and_schema_v2(tmp_path):
+def test_metadata_has_analytics_section(tmp_path):
     report_dir = _export(tmp_path, [])
     metadata = json.loads((report_dir / "metadata.json").read_text(encoding="utf-8"))
-    assert metadata["schema_version"] == REPORT_SCHEMA_VERSION == 2
+    assert metadata["schema_version"] == REPORT_SCHEMA_VERSION == 3
     analytics = metadata["analytics"]
     assert analytics["schema_version"] == 1
     assert analytics["timezone_policy"] == "UTC"

@@ -55,7 +55,7 @@ def test_export_writes_complete_report_bundle(tmp_path):
 
     expected = {
         "summary.json", "trades.csv", "equity_curve.csv",
-        "metadata.json", "execution.log", "analytics",
+        "metadata.json", "execution.log", "analytics", "risk_events.csv",
     }
     assert {p.name for p in report_dir.iterdir()} == expected
 
