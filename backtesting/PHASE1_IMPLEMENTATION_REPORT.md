@@ -107,7 +107,7 @@ Inspect the new `metadata.json` to confirm the 5-point minimum stop and 1.00-lot
 
 ## Remaining Phase 1 work
 
-- [ ] Run the complete local unit suite and resolve any failures.
+- [x] Run the complete local unit suite and resolve any failures. (2026-11-11: 212 passed on the Phase 1 code; 310 passed after the Phase 2 additions.)
 - [ ] Run focused tests for BUY/SELL stop exits, gap-through SL, spread, slippage, force-close, and ambiguous SL+TP candles.
 - [ ] Verify spread is charged exactly once for BUY and SELL round trips.
 - [ ] Verify entry-candle OHLC handling and document the intrabar ordering limitation.

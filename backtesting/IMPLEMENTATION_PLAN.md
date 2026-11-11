@@ -3,7 +3,7 @@
 **Scope:** `/backtesting` only  
 **Repository:** `RohitHuge/MT5`  
 **Target branch:** `main`  
-**Status:** Planned — no implementation tasks in this document are marked complete.  
+**Status:** Phase 1 code committed; local verification partially complete (see `PHASE1_IMPLEMENTATION_REPORT.md`). Phase 2 implemented and verified on 2026-11-11 (see `PHASE2_IMPLEMENTATION_REPORT.md`). Phases 3–4 not started.  
 **Purpose:** Correct historical execution first, then add time-based performance analytics, account-level profit protection, and controlled comparative experiments.
 
 ---
@@ -101,8 +101,8 @@
 
 ## 1F. Phase 1 acceptance and regression
 
-- [ ] Run all existing unit tests.
-- [ ] Run all new Phase 1 unit tests.
+- [x] Run all existing unit tests. (2026-11-11: 212 passed before Phase 2 changes; 310 passed after.)
+- [x] Run all new Phase 1 unit tests. (Included in the suite above.)
 - [ ] Run the November 10 historical period and inspect every previously suspicious trade.
 - [ ] Confirm position-limit invariants and explain any remaining same-candle trade rows.
 - [ ] Confirm reported SL/TP reasons agree with entry, stop, exit and P&L values.
@@ -117,95 +117,97 @@
 
 **Goal:** Explain when the strategy makes or loses money: by trade duration, entry hour, trading session, calendar day, week, and month.
 
+**Status:** Implemented and verified 2026-11-11 — see `PHASE2_IMPLEMENTATION_REPORT.md`.
+
 ## 2A. Define analytics data contracts
 
-- [ ] Review the existing `ClosedPosition`, `LedgerStats`, and `equity_curve` fields before adding duplicated data.
-- [ ] Define one analytics input contract based on validated closed trades, equity observations, run configuration, and timezone/session configuration.
-- [ ] Define whether each grouping attributes a trade to entry time, exit time, or both. Use entry time for entry-cohort performance and exit time for exit-flow analysis; label them distinctly.
-- [ ] Use UTC-aware timestamps for calculations and ISO-8601 UTC timestamps in exported files.
-- [ ] Add explicit configured timezone support for display/session classification; do not infer broker timezone from the machine timezone.
-- [ ] Define behaviour for empty periods, no trades, zero gross losses, and incomplete data.
-- [ ] Add a versioned analytics schema section to report metadata.
+- [x] Review the existing `ClosedPosition`, `LedgerStats`, and `equity_curve` fields before adding duplicated data.
+- [x] Define one analytics input contract based on validated closed trades, equity observations, run configuration, and timezone/session configuration.
+- [x] Define whether each grouping attributes a trade to entry time, exit time, or both. Use entry time for entry-cohort performance and exit time for exit-flow analysis; label them distinctly.
+- [x] Use UTC-aware timestamps for calculations and ISO-8601 UTC timestamps in exported files.
+- [x] Add explicit configured timezone support for display/session classification; do not infer broker timezone from the machine timezone.
+- [x] Define behaviour for empty periods, no trades, zero gross losses, and incomplete data.
+- [x] Add a versioned analytics schema section to report metadata.
 
 ## 2B. Build reusable performance calculations
 
-- [ ] Implement shared aggregation helpers for trade count, winners, losers, win rate, gross profit, gross loss, net P&L, average win/loss, and profit factor.
-- [ ] Implement period opening/closing equity and period return using a clearly documented equity convention.
-- [ ] Implement maximum drawdown from a chronological equity series, including the peak timestamp, trough timestamp, recovery timestamp if present, and duration.
-- [ ] Implement profitable/losing/flat period counts and percentages.
-- [ ] Implement average and median trade duration.
-- [ ] Implement consecutive wins/losses at trade level and profitable/losing streaks at period level as separate metrics.
-- [ ] Add tests proving grouped sums reconcile to the trade ledger and that ordering does not affect aggregation outputs.
+- [x] Implement shared aggregation helpers for trade count, winners, losers, win rate, gross profit, gross loss, net P&L, average win/loss, and profit factor.
+- [x] Implement period opening/closing equity and period return using a clearly documented equity convention.
+- [x] Implement maximum drawdown from a chronological equity series, including the peak timestamp, trough timestamp, recovery timestamp if present, and duration.
+- [x] Implement profitable/losing/flat period counts and percentages.
+- [x] Implement average and median trade duration.
+- [x] Implement consecutive wins/losses at trade level and profitable/losing streaks at period level as separate metrics.
+- [x] Add tests proving grouped sums reconcile to the trade ledger and that ordering does not affect aggregation outputs.
 
 ## 2C. Trade-duration analysis
 
-- [ ] Calculate each trade's holding duration from `fill_ts` and `close_ts`, not from a rounded bar count alone.
-- [ ] Create configurable duration buckets with defaults: 0–5m, 5–15m, 15–30m, 30–60m, 1–2h, and over 2h.
-- [ ] Define boundary inclusivity so a trade at exactly 15 minutes is assigned to one and only one bucket.
-- [ ] Calculate trade count, win rate, net P&L, average net P&L, profit factor, and average adverse/favourable excursion where the required intratrade data exists.
-- [ ] Do not fabricate MAE/MFE from only entry/exit prices; add the required bar-path observations first or label those metrics unavailable.
-- [ ] Export `analytics/duration_analysis.csv`.
-- [ ] Add tests for zero-duration entry-candle trades, exact bucket boundaries, long-running trades, and empty buckets.
+- [x] Calculate each trade's holding duration from `fill_ts` and `close_ts`, not from a rounded bar count alone.
+- [x] Create configurable duration buckets with defaults: 0–5m, 5–15m, 15–30m, 30–60m, 1–2h, and over 2h.
+- [x] Define boundary inclusivity so a trade at exactly 15 minutes is assigned to one and only one bucket.
+- [x] Calculate trade count, win rate, net P&L, average net P&L, profit factor, and average adverse/favourable excursion where the required intratrade data exists.
+- [x] Do not fabricate MAE/MFE from only entry/exit prices; add the required bar-path observations first or label those metrics unavailable.
+- [x] Export `analytics/duration_analysis.csv`.
+- [x] Add tests for zero-duration entry-candle trades, exact bucket boundaries, long-running trades, and empty buckets.
 
 ## 2D. Hourly performance
 
-- [ ] Add entry-hour grouping (0–23) using UTC as the canonical output.
-- [ ] Add optional configured-timezone hour grouping for broker/local analysis.
-- [ ] Calculate trade count, net P&L, win rate, average trade, profit factor, and drawdown contribution per hour.
-- [ ] Define separately whether an exit-hour report is included; do not mix entry-hour and exit-hour attribution.
-- [ ] Export `analytics/hourly_performance.csv` with all 24 hours represented, including zero-trade hours.
-- [ ] Add tests for midnight boundaries, timezone conversion, UTC offset changes, and empty hours.
+- [x] Add entry-hour grouping (0–23) using UTC as the canonical output.
+- [x] Add optional configured-timezone hour grouping for broker/local analysis.
+- [x] Calculate trade count, net P&L, win rate, average trade, profit factor, and drawdown contribution per hour.
+- [x] Define separately whether an exit-hour report is included; do not mix entry-hour and exit-hour attribution.
+- [x] Export `analytics/hourly_performance.csv` with all 24 hours represented, including zero-trade hours.
+- [x] Add tests for midnight boundaries, timezone conversion, UTC offset changes, and empty hours.
 
 ## 2E. Trading-session performance
 
-- [ ] Add explicit session configuration for Asia/Tokyo, London, New York, and London–New York overlap.
-- [ ] Make session windows timezone-aware and daylight-saving-aware.
-- [ ] Define overlap attribution so a trade in the overlap is not accidentally double-counted in the all-session total.
-- [ ] Either support multi-label session analysis with clearly non-additive totals or a mutually exclusive primary-session classification; document which output is used.
-- [ ] Export `analytics/session_performance.csv`.
-- [ ] Add tests covering daylight-saving transitions, session boundaries, overlap windows, and UTC/local conversions.
+- [x] Add explicit session configuration for Asia/Tokyo, London, New York, and London–New York overlap.
+- [x] Make session windows timezone-aware and daylight-saving-aware.
+- [x] Define overlap attribution so a trade in the overlap is not accidentally double-counted in the all-session total.
+- [x] Either support multi-label session analysis with clearly non-additive totals or a mutually exclusive primary-session classification; document which output is used.
+- [x] Export `analytics/session_performance.csv`.
+- [x] Add tests covering daylight-saving transitions, session boundaries, overlap windows, and UTC/local conversions.
 
 ## 2F. Daily, weekly, and monthly performance
 
-- [ ] Implement daily trade P&L by entry date and, separately, realised P&L by exit date.
-- [ ] Implement daily equity open, close, high, low, return, trade count, and drawdown.
-- [ ] Implement week grouping with an explicitly chosen convention (ISO week recommended) and include the ISO year to avoid year-boundary ambiguity.
-- [ ] Implement monthly grouping by calendar month.
-- [ ] Include zero-trade calendar periods within the requested test range when reporting account/equity performance.
-- [ ] Treat a trade that crosses midnight/week/month boundaries consistently: attribute trade P&L by exit time for realised cash-flow reporting, and use mark-to-market equity for period risk reporting.
-- [ ] Export `analytics/daily_performance.csv`, `analytics/weekly_performance.csv`, and `analytics/monthly_performance.csv`.
-- [ ] Add tests for weekend gaps, month/year transitions, cross-midnight trades, and periods with no closed trades.
+- [x] Implement daily trade P&L by entry date and, separately, realised P&L by exit date.
+- [x] Implement daily equity open, close, high, low, return, trade count, and drawdown.
+- [x] Implement week grouping with an explicitly chosen convention (ISO week recommended) and include the ISO year to avoid year-boundary ambiguity.
+- [x] Implement monthly grouping by calendar month.
+- [x] Include zero-trade calendar periods within the requested test range when reporting account/equity performance.
+- [x] Treat a trade that crosses midnight/week/month boundaries consistently: attribute trade P&L by exit time for realised cash-flow reporting, and use mark-to-market equity for period risk reporting.
+- [x] Export `analytics/daily_performance.csv`, `analytics/weekly_performance.csv`, and `analytics/monthly_performance.csv`.
+- [x] Add tests for weekend gaps, month/year transitions, cross-midnight trades, and periods with no closed trades.
 
 ## 2G. Mark-to-market equity and drawdown analytics
 
-- [ ] Extend the simulation output to capture equity at each M5 decision point, including floating P&L of open positions.
-- [ ] Keep the existing closed-trade equity series for compatibility, but name/document it as closed-trade or realised-equity data.
-- [ ] Define mark-to-market pricing using the correct close-side price for BUY and SELL positions, including spread.
-- [ ] Include commissions consistently in realised equity and clearly identify any costs not modelled, including swap if still excluded.
-- [ ] Calculate account equity peak, trough, maximum drawdown, time underwater, and recovery.
-- [ ] Export a separate mark-to-market equity/drawdown file without silently changing the meaning of the existing `equity_curve.csv`.
-- [ ] Add tests for floating profit/loss, open positions at period ends, spread-side valuation, and peak/trough/recovery calculations.
+- [x] Extend the simulation output to capture equity at each M5 decision point, including floating P&L of open positions.
+- [x] Keep the existing closed-trade equity series for compatibility, but name/document it as closed-trade or realised-equity data.
+- [x] Define mark-to-market pricing using the correct close-side price for BUY and SELL positions, including spread.
+- [x] Include commissions consistently in realised equity and clearly identify any costs not modelled, including swap if still excluded.
+- [x] Calculate account equity peak, trough, maximum drawdown, time underwater, and recovery.
+- [x] Export a separate mark-to-market equity/drawdown file without silently changing the meaning of the existing `equity_curve.csv`.
+- [x] Add tests for floating profit/loss, open positions at period ends, spread-side valuation, and peak/trough/recovery calculations.
 
 ## 2H. Integrate analytics into report export and CLI
 
-- [ ] Add the analytics package under `reporting/` without putting report aggregation logic inside strategy or execution modules.
-- [ ] Update `exporter.py` to create the analytics directory and write every defined CSV/JSON output.
-- [ ] Update report completeness validation to require the new files for the new schema version.
-- [ ] Preserve existing summary, trades, metadata, equity curve, and execution log outputs.
-- [ ] Update `metrics.py` with a concise analytics summary (best/worst hour, best/worst session, profitable days, duration bucket highlights).
-- [ ] Include timezone and attribution conventions in `metadata.json`.
-- [ ] Ensure report publishing continues to publish only the report run directory using the existing publisher.
-- [ ] Add exporter tests for complete analytics bundles, empty datasets, schema versioning, and no secrets in metadata.
+- [x] Add the analytics package under `reporting/` without putting report aggregation logic inside strategy or execution modules.
+- [x] Update `exporter.py` to create the analytics directory and write every defined CSV/JSON output.
+- [x] Update report completeness validation to require the new files for the new schema version.
+- [x] Preserve existing summary, trades, metadata, equity curve, and execution log outputs.
+- [x] Update `metrics.py` with a concise analytics summary (best/worst hour, best/worst session, profitable days, duration bucket highlights).
+- [x] Include timezone and attribution conventions in `metadata.json`.
+- [x] Ensure report publishing continues to publish only the report run directory using the existing publisher.
+- [x] Add exporter tests for complete analytics bundles, empty datasets, schema versioning, and no secrets in metadata.
 
 ## 2I. Phase 2 acceptance
 
-- [ ] Run all unit tests.
-- [ ] Run integration tests over the historical XAUUSD sample.
-- [ ] Reconcile daily/weekly/monthly realised P&L to total net P&L.
-- [ ] Reconcile duration/hour/session trade counts to the relevant closed-trade population (with explicitly documented multi-label overlap exceptions).
-- [ ] Verify all period reports use the intended timezone.
-- [ ] Verify mark-to-market maximum drawdown can differ from closed-trade drawdown and both are labelled correctly.
-- [ ] Publish a fresh immutable report and verify all analytics files exist on GitHub.
+- [x] Run all unit tests.
+- [x] Run integration tests over the historical XAUUSD sample.
+- [x] Reconcile daily/weekly/monthly realised P&L to total net P&L.
+- [x] Reconcile duration/hour/session trade counts to the relevant closed-trade population (with explicitly documented multi-label overlap exceptions).
+- [x] Verify all period reports use the intended timezone.
+- [x] Verify mark-to-market maximum drawdown can differ from closed-trade drawdown and both are labelled correctly.
+- [x] Publish a fresh immutable report and verify all analytics files exist on GitHub.
 
 **Phase 2 deliverable:** A multi-timeframe analytics report that can explain trade duration, time-of-day, session, daily, weekly, monthly, and intratrade/equity behaviour.
 
