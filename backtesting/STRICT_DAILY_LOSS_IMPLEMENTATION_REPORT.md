@@ -30,6 +30,12 @@ The risk manager now exposes `daily_loss_remaining(...)` and `check_daily_risk_b
 - `tests/unit/test_account_risk.py`: budget calculation, remaining-risk, threshold-fit tests.
 - `tests/unit/test_engine_risk.py`: no-new-entry after daily breach and oversized daily-budget admission tests.
 
+## Validation feedback and corrective commit
+
+The first local unit-test run reported **380 passed, 14 failed**. All 14 failures shared one root cause: the engine passed the timestamp positionally to `check_daily_risk_budget`, while that method declares `ts` as keyword-only. This was a call-site defect, not 14 independent risk-rule failures.
+
+Corrective commit: `f23bd239` — the engine now passes `ts=candle.timestamp`. The full unit suite must be rerun to verify this correction. The supplied console output ends immediately after the integration-test command, so no integration-test result is available yet.
+
 ## Validation still required
 
 Run locally on the feature branch:
