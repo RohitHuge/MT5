@@ -164,7 +164,15 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         finally:
             adapter.disconnect()
 
-    # Derive M15
+    # Validate M5 before aggregation or any backtest setup. The fetch command
+    # already enforces this quality gate; backtests must apply the same rule.
+    val_m5 = validate_candles(m5, "M5")
+    if not val_m5.passed:
+        print_data_summary(m5, val_m5, None)
+        print("ERROR: M5 data quality check failed; backtest aborted.", file=sys.stderr)
+        return 1
+
+    # Derive M15 only after the source M5 series passes validation.
     agg = aggregate_m5_to_m15(m5)
     m15 = agg.candles
     if agg.incomplete_windows:
