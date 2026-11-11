@@ -184,6 +184,32 @@ class TestDailyTargetProtection:
         assert mgr.state is RiskState.ACTIVE
 
 
+class TestDailyRiskBudget:
+    def test_remaining_budget_accounts_for_realised_and_floating_loss(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        _candle_obs(mgr, MONDAY, 10_000.0)
+        assert mgr.daily_loss_remaining(realised_equity=10_000.0, floating_pnl=0.0) == pytest.approx(50.0)
+        assert mgr.daily_loss_remaining(realised_equity=9_970.0, floating_pnl=-5.0) == pytest.approx(15.0)
+
+    def test_proposed_risk_must_fit_remaining_budget(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        _candle_obs(mgr, MONDAY, 10_000.0)
+        blocked = mgr.check_daily_risk_budget(
+            ts=MONDAY, proposed_risk_usd=60.0,
+            realised_equity=10_000.0, floating_pnl=0.0)
+        assert blocked.allowed is False
+        assert blocked.reason_code == "DAILY_RISK_BUDGET_EXCEEDED"
+        assert blocked.threshold_value == pytest.approx(50.0)
+
+    def test_proposal_equal_to_remaining_budget_is_allowed(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        _candle_obs(mgr, MONDAY, 10_000.0)
+        accepted = mgr.check_daily_risk_budget(
+            ts=MONDAY, proposed_risk_usd=50.0,
+            realised_equity=10_000.0, floating_pnl=0.0)
+        assert accepted.allowed is True
+
+
 class TestEquityTrailingProtection:
     def test_floor_appears_after_peak_and_is_monotonic(self):
         mgr = _manager(equity_trail_giveback_usd=200.0)
