@@ -383,6 +383,37 @@ class AccountRiskManager:
         for closed in closed_positions:
             self.on_trade_closed(ts, closed.net_pnl_usd, realised_equity=realised_equity)
 
+    def daily_loss_remaining(self, *, realised_equity: float, floating_pnl: float) -> float | None:
+        """Remaining daily loss budget in USD; None means no daily limit is configured."""
+        if self._daily_baseline is None:
+            return self._effective_daily_loss_threshold(self.initial_equity)
+        limit = self._effective_daily_loss_threshold(self._daily_baseline)
+        if limit is None:
+            return None
+        daily_pnl = realised_equity + floating_pnl - self._daily_baseline
+        return max(0.0, limit + daily_pnl)
+
+    def check_daily_risk_budget(self, *, proposed_risk_usd: float,
+                                realised_equity: float, floating_pnl: float,
+                                ts: datetime) -> RiskDecision:
+        """Reject a proposed trade if its planned stop risk exceeds remaining daily budget.
+
+        This is an admission-control guard, not a guarantee against execution
+        gaps/slippage. It reserves only the risk to the initial stop and keeps
+        the daily lock logic authoritative for realised + floating equity.
+        """
+        remaining = self.daily_loss_remaining(
+            realised_equity=realised_equity, floating_pnl=floating_pnl)
+        if remaining is None or proposed_risk_usd <= remaining:
+            return RiskDecision(allowed=True, state=self.state, timestamp=ts)
+        reason = "DAILY_RISK_BUDGET_EXCEEDED"
+        self.blocked_by_reason[reason] = self.blocked_by_reason.get(reason, 0) + 1
+        return RiskDecision(
+            allowed=False, state=self.state, reason_code=reason,
+            observed_value=proposed_risk_usd, threshold_value=remaining,
+            timestamp=ts, action="STOP_NEW_ENTRIES",
+        )
+
     # -- closed-trade feedback (loss streak) ------------------------------
 
     def on_trade_closed(self, ts: datetime, net_pnl_usd: float, *,

@@ -136,47 +136,52 @@ def run_backtest(
         candle_utc = candle.timestamp.astimezone(timezone.utc)
         candle_date = candle_utc.date()
 
-        # Close/resolve existing positions before considering new entries.
-        still_open: list[OpenPosition] = []
-        for pos in open_positions:
-            status, close_price = pos.check_candle(candle, idx)
-            if status == PositionStatus.OPEN:
-                still_open.append(pos)
-            else:
-                reason = "TP" if status == PositionStatus.HIT_TP else "SL"
+        # Phase 3: evaluate account risk against current mark-to-market equity
+        # BEFORE normal SL/TP bookkeeping. In OHLC mode this is still a
+        # candle-close observation (not tick-level protection), but it prevents
+        # a just-closed stop from being followed by a second entry before the
+        # daily lock is applied.
+        if risk is not None:
+            floating_before_exits = sum(pos.unrealized_pnl(candle) for pos in open_positions)
+            risk.on_candle(
+                candle.timestamp, realised_equity=equity,
+                floating_pnl=floating_before_exits, open_positions=len(open_positions))
+
+        # Resolve ordinary SL/TP exits. A risk CLOSE_ALL lock takes precedence:
+        # positions are closed at this bar's executable close and recorded with
+        # a risk-specific exit reason rather than being booked as an SL/TP.
+        if risk is not None and risk.close_all_requested() and open_positions:
+            exit_reason = RISK_EXIT_REASONS[risk.state]
+            risk_closed: list[ClosedPosition] = []
+            for pos in open_positions:
                 commission = 2.0 * config.commission_usd * pos.fill.lots
-                closed = pos.close(close_price, idx, candle.timestamp, reason, commission)
+                closed = pos.close(
+                    pos.executable_exit_price(candle.close), idx,
+                    candle.timestamp, exit_reason, commission)
                 ledger.record(closed)
                 equity += closed.net_pnl_usd
                 equity_curve.append((candle.timestamp, equity))
-                if risk is not None:
-                    risk.on_trade_closed(
-                        candle.timestamp, closed.net_pnl_usd, realised_equity=equity)
-        open_positions = still_open
-
-        # Phase 3: account-risk supervision. Evaluated after this candle's
-        # mark-to-market valuation and before any new entry is admitted, so a
-        # same-candle exit/new-entry sequence cannot bypass a fresh lock.
-        if risk is not None:
-            floating_now = sum(pos.unrealized_pnl(candle) for pos in open_positions)
-            risk.on_candle(
-                candle.timestamp, realised_equity=equity, floating_pnl=floating_now,
-                open_positions=len(open_positions))
-            if risk.close_all_requested() and open_positions:
-                exit_reason = RISK_EXIT_REASONS[risk.state]
-                risk_closed: list[ClosedPosition] = []
-                for pos in open_positions:
+                risk_closed.append(closed)
+                counters["risk_force_closed"] += 1
+            risk.record_forced_closures(candle.timestamp, risk_closed, equity)
+            open_positions = []
+        else:
+            still_open: list[OpenPosition] = []
+            for pos in open_positions:
+                status, close_price = pos.check_candle(candle, idx)
+                if status == PositionStatus.OPEN:
+                    still_open.append(pos)
+                else:
+                    reason = "TP" if status == PositionStatus.HIT_TP else "SL"
                     commission = 2.0 * config.commission_usd * pos.fill.lots
-                    closed = pos.close(
-                        pos.executable_exit_price(candle.close), idx,
-                        candle.timestamp, exit_reason, commission)
+                    closed = pos.close(close_price, idx, candle.timestamp, reason, commission)
                     ledger.record(closed)
                     equity += closed.net_pnl_usd
                     equity_curve.append((candle.timestamp, equity))
-                    risk_closed.append(closed)
-                    counters["risk_force_closed"] += 1
-                risk.record_forced_closures(candle.timestamp, risk_closed, equity)
-                open_positions = []
+                    if risk is not None:
+                        risk.on_trade_closed(
+                            candle.timestamp, closed.net_pnl_usd, realised_equity=equity)
+            open_positions = still_open
 
         # Legacy path only: a new UTC day baseline is the account's
         # mark-to-market equity at this first available candle. When the risk
@@ -257,12 +262,16 @@ def run_backtest(
                 trade_gate = risk.check_trade_risk(
                     candle.timestamp, proposed_risk_usd=actual_risk_usd,
                     current_equity=equity + unrealised)
-                if not trade_gate.allowed:
+                daily_budget_gate = risk.check_daily_risk_budget(
+                    ts=candle.timestamp, proposed_risk_usd=actual_risk_usd,
+                    realised_equity=equity, floating_pnl=unrealised)
+                if not trade_gate.allowed or not daily_budget_gate.allowed:
                     counters["skipped_risk"] += 1
+                    rejection = trade_gate if not trade_gate.allowed else daily_budget_gate
                     logger.debug(
                         "Blocked %s — %s (risk %.2f > %.2f)", setup.setup_id,
-                        trade_gate.reason_code, actual_risk_usd,
-                        trade_gate.threshold_value or 0.0)
+                        rejection.reason_code, actual_risk_usd,
+                        rejection.threshold_value or 0.0)
                     continue
 
             fill = simulate_fill(
