@@ -110,6 +110,15 @@ class OpenPosition:
         self.mae_usd = min(self.mae_usd, adverse, 0.0)
         self.mfe_usd = max(self.mfe_usd, favourable, 0.0)
 
+    def observe_candle(self, candle) -> None:
+        """Record a candle's excursion without applying an exit rule.
+
+        Account-level CLOSE_ALL is evaluated ahead of ordinary SL/TP handling,
+        but its resulting trade still needs the bar's full OHLC path in its
+        MAE/MFE record.
+        """
+        self._observe_bar(candle)
+
     def _pnl(self, close_price: float) -> float:
         if self.fill.direction == "BUY":
             price_diff = close_price - self.fill.fill_price
@@ -167,6 +176,36 @@ class OpenPosition:
 
     def unrealized_pnl(self, candle) -> float:
         return self._pnl(self.executable_exit_price(candle.close))
+
+    def initial_stop_risk_usd(self, commission_usd: float = 0.0) -> float:
+        """Return the non-negative net loss if this position exits at its SL.
+
+        This is the original, executable stop exposure: the fill already
+        contains entry friction; the stop exit includes exit slippage and the
+        caller supplies the configured round-trip commission.  It is useful
+        for reporting and for the first admission of a position.
+        """
+        if self.fill.direction == "BUY":
+            stop_exit = self.fill.sl_price - self._slippage_price()
+        else:
+            stop_exit = self.fill.sl_price + self._slippage_price()
+        return max(0.0, round(-(self._pnl(stop_exit) - commission_usd), 2))
+
+    def additional_stop_risk_usd(self, candle, commission_usd: float = 0.0) -> float:
+        """Return further loss possible from this candle's MTM price to SL.
+
+        The daily guard already includes current floating P&L.  Reserving the
+        whole initial stop loss again would therefore double count a floating
+        loss (or omit a reversal from a floating gain).  This calculates the
+        incremental loss between the executable mark and executable stop,
+        including commission exactly once at the stop.
+        """
+        # The engine marks open positions net of their estimated round-trip
+        # commission, so compare like-for-like here.
+        current_pnl = self.unrealized_pnl(candle) - commission_usd
+        stop_loss = self.initial_stop_risk_usd(commission_usd)
+        current_loss = max(0.0, -current_pnl)
+        return max(0.0, round(stop_loss - current_loss, 2))
 
     def close(
         self, close_price: float, candle_index: int, candle_ts: datetime,

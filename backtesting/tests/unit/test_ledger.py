@@ -208,3 +208,13 @@ def test_all_losses_no_wins():
     assert stats.profit_factor == pytest.approx(0.0)
     assert stats.winners == 0
     assert stats.max_consecutive_losses == 2
+
+
+def test_gross_and_net_profit_factor_are_distinct_after_commission():
+    ledger = TradeLedger(initial_equity=10_000.0)
+    ledger.record(_trade_with_comm(120.0, 20.0))
+    ledger.record(_trade_with_comm(-80.0, 20.0))
+    stats = ledger.compute_stats()
+    assert stats.profit_factor == pytest.approx(1.5)
+    assert stats.gross_profit_factor == pytest.approx(1.5)
+    assert stats.net_profit_factor == pytest.approx(1.0)

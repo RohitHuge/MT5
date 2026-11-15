@@ -82,16 +82,16 @@ class TestDailyLossWithOpenPositions:
         """A SELL in a large floating loss triggers the daily loss lock and
         the CLOSE_ALL policy force-closes it with costs included.
 
-        Numbers: SELL fill 2000 (idx2), sl 2015 → 1500-pt SL → 0.06 lots at
-        1% risk ($100). Floating loss = 6 USD per 1.0 price move. daily_loss
-        USD 50 is crossed at close 2010 (-60) on idx3.
+        The fixture uses a $45 planned stop loss beneath the $50 daily budget;
+        a later $51 floating loss then triggers the protection.
         """
         cfg = _risk_cfg(daily_loss_usd=50.0, open_position_action="CLOSE_ALL")
+        cfg.risk_pct = 0.5
         candles = [
             _candle(0),
             _candle(1, o=2000, h=2001, l=1999, c=2000),   # rejection candle
             _candle(2, o=2000, h=2001, l=1999, c=2000),   # SELL fills at idx2
-            _candle(3, o=2000, h=2012, l=1999, c=2010),   # floating -60 → trigger
+            _candle(3, o=2000, h=2017, l=1999, c=2017),   # floating -51 → trigger
         ]
         setup = _make_setup("RISK_DL", "SELL", sl_price=2015.0, rejection_idx=1)
         result = _run([setup], candles, cfg)
@@ -110,12 +110,13 @@ class TestDailyLossWithOpenPositions:
     def test_stop_new_entries_keeps_managing_open_position(self):
         """With STOP_NEW_ENTRIES the open position is never abandoned: its
         SL still closes it on a later candle."""
-        cfg = _risk_cfg(daily_loss_usd=1.0, open_position_action="STOP_NEW_ENTRIES")
+        cfg = _risk_cfg(daily_loss_usd=50.0, open_position_action="STOP_NEW_ENTRIES")
+        cfg.risk_pct = 0.5
         candles = [
             _candle(0),
             _candle(1, o=2000, h=2001, l=1999, c=2000),   # rejection candle
             _candle(2, o=2000, h=2001, l=1999, c=2000),   # SELL fills at idx2
-            _candle(3, o=2000, h=2001, l=1999, c=2001),   # floating -6 → trigger
+            _candle(3, o=2000, h=2017, l=1999, c=2017),   # floating -51 → trigger
             _candle(4, o=2001, h=2012, l=2000, c=2011),   # SL 2010 hit later
         ]
         setup = _make_setup("RISK_SNE", "SELL", sl_price=2010.0, rejection_idx=1)
@@ -126,13 +127,14 @@ class TestDailyLossWithOpenPositions:
         assert result.risk_summary["final_state"] == RiskState.DAILY_LOSS_REACHED.value
 
     def test_daily_lock_blocks_later_entries_and_counts_reason(self):
-        cfg = _risk_cfg(daily_loss_usd=1.0, open_position_action="STOP_NEW_ENTRIES")
+        cfg = _risk_cfg(daily_loss_usd=50.0, open_position_action="STOP_NEW_ENTRIES")
+        cfg.risk_pct = 0.5
         candles = [_candle(i) for i in range(10)]
         first = _make_setup("RISK_A", "SELL", sl_price=2015.0, rejection_idx=0)
         second = _make_setup("RISK_B", "SELL", sl_price=2015.0, rejection_idx=3)
-        # The first trade (fill idx1) stops out at idx2: realised -90 crosses
-        # the 1 USD daily limit; the second trade (fill idx4) is then blocked.
-        candles[2] = _candle(2, o=2000, h=2016, l=1999, c=2015)
+        # The first admitted trade reaches a -$51 MTM loss before its normal
+        # stop bookkeeping; the later setup is therefore blocked by the lock.
+        candles[2] = _candle(2, o=2000, h=2017, l=1999, c=2017)
         result = _run([first, second], candles, cfg)
 
         assert result.trades_opened == 1
@@ -260,14 +262,15 @@ class TestSameCandleLockBypassPrevention:
     def test_entry_cannot_follow_a_fresh_lock_on_the_same_candle(self):
         """A loss visible in mark-to-market on one candle must lock before
         the entry that maps to that same candle (plan 3F)."""
-        cfg = _risk_cfg(daily_loss_usd=1.0, open_position_action="STOP_NEW_ENTRIES")
+        cfg = _risk_cfg(daily_loss_usd=50.0, open_position_action="STOP_NEW_ENTRIES")
+        cfg.risk_pct = 0.5
         candles = [_candle(i) for i in range(10)]
-        # First SELL (fill idx1) shows a -24 floating loss on candle idx2.
+        # First SELL (fill idx1) shows a -$51 floating loss on candle idx2.
         # The lock triggers at idx2 before the second setup (fill idx2) is
         # admitted — the same-candle entry is risk-blocked.
         first = _make_setup("SC_A", "SELL", sl_price=2015.0, rejection_idx=0)
         second = _make_setup("SC_B", "SELL", sl_price=2015.0, rejection_idx=1)
-        candles[2] = _candle(2, o=2000, h=2005, l=1999, c=2004)
+        candles[2] = _candle(2, o=2000, h=2017, l=1999, c=2017)
         result = _run([first, second], candles, cfg)
 
         assert result.trades_opened == 1
@@ -297,16 +300,16 @@ class TestLegacyBehaviourWhenDisabled:
 
 class TestAccountingReconciliation:
     def test_risk_closures_count_in_ledger_and_final_equity_reconciles(self):
-        """Numbers: SELL fill 2000 (idx2), sl 2020 → 0.05 lots; floating =
-        5 USD per 1.0 move. daily_loss USD 50 crossed at close 2010 (idx3)."""
+        """A $45 admissible stop loss later crosses the $50 daily threshold."""
         cfg = _risk_cfg(daily_loss_usd=50.0, open_position_action="CLOSE_ALL")
+        cfg.risk_pct = 0.5
         candles = [
             _candle(0),
             _candle(1, o=2000, h=2001, l=1999, c=2000),
             _candle(2, o=2000, h=2001, l=1999, c=2000),   # SELL fills at idx2
-            _candle(3, o=2000, h=2012, l=1999, c=2010),   # floating -50 → trigger
+            _candle(3, o=2000, h=2017, l=1999, c=2017),   # floating -51 → trigger
         ]
-        setup = _make_setup("REC_A", "SELL", sl_price=2020.0, rejection_idx=1)
+        setup = _make_setup("REC_A", "SELL", sl_price=2015.0, rejection_idx=1)
         result = _run([setup], candles, cfg)
 
         ledger_net = sum(t.net_pnl_usd for t in result.closed_positions)

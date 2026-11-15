@@ -76,8 +76,9 @@ def _pf(pf: float) -> str | float:
 
 def _pf_safe_dict(payload: dict[str, Any]) -> dict[str, Any]:
     """Replace inf profit factors so JSON stays standards-compliant."""
-    if payload.get("profit_factor") == float("inf"):
-        payload["profit_factor"] = "inf"
+    for key in ("profit_factor", "gross_profit_factor", "net_profit_factor"):
+        if payload.get(key) == float("inf"):
+            payload[key] = "inf"
     return payload
 
 
@@ -298,8 +299,7 @@ def export_backtest_report(
         "risk": result.risk_summary,
     }
     # JSON has no standard Infinity value; store a stable string for zero-loss runs.
-    if summary["statistics"]["profit_factor"] == float("inf"):
-        summary["statistics"]["profit_factor"] = "inf"
+    _pf_safe_dict(summary["statistics"])
     _write_json(run_dir / "summary.json", summary)
 
     with (run_dir / "trades.csv").open("w", newline="", encoding="utf-8") as handle:

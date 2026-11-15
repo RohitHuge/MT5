@@ -18,6 +18,7 @@ class LedgerStats:
     gross_loss: float
     total_commission: float
     net_pnl: float
+    # Backward-compatible alias for gross_profit_factor.
     profit_factor: float  # gross profit / abs(gross loss), before commission
     avg_win: float
     avg_loss: float
@@ -33,6 +34,8 @@ class LedgerStats:
     avg_mfe_usd: float = 0.0
     worst_mae_usd: float = 0.0
     best_mfe_usd: float = 0.0
+    gross_profit_factor: float = 0.0
+    net_profit_factor: float = 0.0
 
 
 @dataclass
@@ -63,6 +66,10 @@ class TradeLedger:
 
         wins = [t for t in trades if t.net_pnl_usd > 0]
         losses = [t for t in trades if t.net_pnl_usd <= 0]
+        net_wins = sum(t.net_pnl_usd for t in wins)
+        net_losses = sum(t.net_pnl_usd for t in losses)
+        net_pf = (net_wins / abs(net_losses) if net_losses < 0
+                  else (float("inf") if net_wins > 0 else 0.0))
         avg_win = sum(t.net_pnl_usd for t in wins) / len(wins) if wins else 0.0
         avg_loss = sum(t.net_pnl_usd for t in losses) / len(losses) if losses else 0.0
 
@@ -104,4 +111,6 @@ class TradeLedger:
             max_consecutive_wins=max_wins, max_consecutive_losses=max_losses,
             avg_mae_usd=round(avg_mae, 2), avg_mfe_usd=round(avg_mfe, 2),
             worst_mae_usd=round(worst_mae, 2), best_mfe_usd=round(best_mfe, 2),
+            gross_profit_factor=round(gross_pf, 4) if gross_pf != float("inf") else gross_pf,
+            net_profit_factor=round(net_pf, 4) if net_pf != float("inf") else net_pf,
         )

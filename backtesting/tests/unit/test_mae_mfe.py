@@ -249,17 +249,18 @@ class TestEngineIntegration:
         cfg = self._cfg()
         cfg.account_risk = AccountRiskConfig(enabled=True, daily_loss_usd=50.0,
                                              open_position_action="CLOSE_ALL")
+        cfg.risk_pct = 0.5  # $45 planned stop risk is admissible below $50.
         candles = [
             _candle(0),
             _candle(1, o=2000, h=2001, l=1999, c=2000),
             _candle(2, o=2000, h=2001, l=1999, c=2000),   # SELL fills at idx2
-            _candle(3, o=2000, h=2012, l=1999, c=2010),   # floating -72 → trigger
+            _candle(3, o=2000, h=2017, l=1999, c=2017),   # floating -51 → trigger
         ]
         result = self._run([self._setup("M2_RISK", "SELL", 2015.0)], candles, cfg)
         trade = result.closed_positions[0]
         assert trade.exit_reason == "RISK_DAILY_LOSS"
-        lots = trade.lots                                 # 0.06 (1% risk, 1500-pt SL)
-        assert trade.mae_usd == pytest.approx(-12.0 / 0.01 * 1.0 * lots)   # bar high 2012
+        lots = trade.lots                                 # 0.03 (0.5% risk, 1500-pt SL)
+        assert trade.mae_usd == pytest.approx(-17.0 / 0.01 * 1.0 * lots)   # bar high 2017
         assert trade.mfe_usd == pytest.approx(1.0 / 0.01 * 1.0 * lots)     # bar low 1999
         # realised (-60) lies within [mae, mfe]
         assert trade.mae_usd <= trade.pnl_usd <= trade.mfe_usd
