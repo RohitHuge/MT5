@@ -1,0 +1,61 @@
+{
+  "force_closed": 0,
+  "from_date": "2026-08-13",
+  "generated_at_utc": "2026-11-15T06:15:25.844030+00:00",
+  "risk": {
+    "active_locks": [],
+    "blocked_by_reason": {
+      "DAILY_RISK_BUDGET_EXCEEDED": 5,
+      "RISK_DAILY_LOSS": 5
+    },
+    "daily_baseline": 9607.7,
+    "enabled": true,
+    "event_count": 70,
+    "final_state": "ACTIVE",
+    "floor_equity": null,
+    "forced_closures": 3,
+    "locks_triggered": [
+      "DAILY_LOSS_REACHED"
+    ],
+    "loss_streak": 6,
+    "open_position_action": "CLOSE_ALL",
+    "peak_equity": 10046.34
+  },
+  "run_id": "2026-11-15_06-15-25_bfda217a",
+  "setups": {
+    "entry_ready": 31,
+    "skipped_daily_loss": 0,
+    "skipped_max_positions": 2,
+    "skipped_no_next_bar": 0,
+    "skipped_sizing": 5,
+    "total": 540
+  },
+  "statistics": {
+    "avg_loss": -47.69,
+    "avg_mae_usd": -87.4,
+    "avg_mfe_usd": 41.61,
+    "avg_win": 89.96,
+    "best_mfe_usd": 104.78,
+    "cost_note": "swap excluded; profit factor is gross (pre-commission)",
+    "final_equity": 9607.7,
+    "gross_loss": -572.22,
+    "gross_profit": 179.92,
+    "gross_profit_factor": 0.3144,
+    "losers": 12,
+    "max_consecutive_losses": 6,
+    "max_consecutive_wins": 1,
+    "max_drawdown_pct": 4.334,
+    "max_drawdown_usd": 435.26,
+    "net_pnl": -392.3,
+    "net_profit_factor": 0.3144,
+    "profit_factor": 0.3144,
+    "total_commission": 0.0,
+    "total_trades": 14,
+    "win_rate": 0.14285714285714285,
+    "winners": 2,
+    "worst_mae_usd": -536.8
+  },
+  "symbol": "XAUUSD",
+  "to_date": "2026-11-10",
+  "trades_opened": 14
+}
