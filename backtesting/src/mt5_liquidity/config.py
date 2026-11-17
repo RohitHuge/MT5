@@ -120,6 +120,10 @@ class BacktestConfig:
     analytics_display_timezone: str = "UTC"
     duration_bucket_minutes: tuple[int, ...] | None = None
     session_overrides: dict[str, dict[str, str]] | None = None
+    # Sessions whose entry candles are blocked. e.g. ["TOKYO"] skips all
+    # entries fired during the Tokyo window. Valid labels: TOKYO, LONDON,
+    # NEW_YORK, LONDON_NY_OVERLAP, OFF_SESSION.
+    skip_sessions: list[str] = field(default_factory=list)
     # Phase 3: account-level risk manager (disabled by default; when disabled
     # the engine keeps its legacy inline daily-loss guard).
     account_risk: AccountRiskConfig = field(default_factory=AccountRiskConfig)

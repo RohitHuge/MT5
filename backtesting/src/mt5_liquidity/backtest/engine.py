@@ -17,6 +17,7 @@ from .ledger import LedgerStats, TradeLedger
 from .positions import ClosedPosition, OpenPosition, PositionStatus
 from ..risk.position_sizing import SizingResult, calculate_position_size
 from ..risk.account_risk import RISK_EXIT_REASONS, RiskEvent, build_account_risk_manager
+from ..session_classifier import classify_session, resolve_sessions
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class BacktestResult:
     rejected_sizings: list[SizingResult]
     mark_to_market_curve: list[MarkToMarketPoint] = field(default_factory=list)
     # Phase 3: account-risk outputs (defaulted for backward compatibility).
+    setups_skipped_session: int = 0
     setups_skipped_risk: int = 0
     risk_blocked_by_reason: dict[str, int] = field(default_factory=dict)
     risk_events: list[RiskEvent] = field(default_factory=list)
@@ -123,6 +125,9 @@ def run_backtest(
     _swap_active = (swap_long != 0.0 or swap_short != 0.0)
     _prev_candle_date: date | None = None
 
+    _skip_sessions: set[str] = set(config.skip_sessions or [])
+    _session_windows = resolve_sessions(config.session_overrides) if _skip_sessions else []
+
     # Phase 3: one account-risk manager per run. When disabled the engine
     # keeps its legacy inline daily-loss guard and the legacy behaviour is
     # bit-for-bit unchanged.
@@ -131,7 +136,7 @@ def run_backtest(
     counters = {
         "skipped_max_pos": 0, "skipped_daily_loss": 0, "skipped_sizing": 0,
         "skipped_no_next_bar": 0, "trades_opened": 0, "force_closed": 0,
-        "skipped_risk": 0, "risk_force_closed": 0,
+        "skipped_risk": 0, "risk_force_closed": 0, "skipped_session": 0,
     }
     rejected_sizings: list[SizingResult] = []
     candle_entry_consumed: set[int] = set()
@@ -235,6 +240,12 @@ def run_backtest(
             if len(open_positions) >= config.max_positions:
                 counters["skipped_max_pos"] += 1
                 continue
+
+            if _skip_sessions:
+                entry_session = classify_session(candle.timestamp, _session_windows)
+                if entry_session in _skip_sessions:
+                    counters["skipped_session"] += 1
+                    continue
 
             unrealised = floating_net(candle)
             if risk is not None:
@@ -385,6 +396,7 @@ def run_backtest(
         force_closed=counters["force_closed"], stats=stats,
         equity_curve=equity_curve, rejected_sizings=rejected_sizings,
         mark_to_market_curve=mark_to_market_curve,
+        setups_skipped_session=counters["skipped_session"],
         setups_skipped_risk=counters["skipped_risk"],
         risk_blocked_by_reason=dict(risk.blocked_by_reason) if risk else {},
         risk_events=list(risk.events) if risk else [],

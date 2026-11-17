@@ -149,6 +149,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     cfg.trading_day_timezone = getattr(args, "trading_day_timezone", "UTC")
     cfg.swap_long_points = getattr(args, "swap_long", 0.0)
     cfg.swap_short_points = getattr(args, "swap_short", 0.0)
+    cfg.skip_sessions = getattr(args, "skip_sessions", []) or []
 
     # Phase 3: optional account-risk manager activation via CLI. getattr
     # defaults keep cmd_backtest callable with hand-built argument namespaces
@@ -332,6 +333,10 @@ def main() -> None:
     p_bt.add_argument("--equity", type=float, default=10_000.0)
     p_bt.add_argument("--trading-day-timezone", default="UTC",
                       help="IANA timezone for daily loss reset (e.g. America/New_York)")
+    p_bt.add_argument("--skip-sessions", nargs="+", default=[],
+                      metavar="SESSION",
+                      help="Block entries in these sessions. e.g. TOKYO OFF_SESSION. "
+                           "Valid: TOKYO LONDON NEW_YORK LONDON_NY_OVERLAP OFF_SESSION")
     p_bt.add_argument("--swap-long", type=float, default=0.0,
                       help="Overnight swap for long positions in broker points "
                            "(negative=cost, e.g. -69.21 for Vantage XAUUSD)")

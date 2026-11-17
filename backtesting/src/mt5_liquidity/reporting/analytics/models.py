@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from mt5_liquidity.session_classifier import SessionWindow  # re-export; avoids duplication
+
 
 @dataclass
 class TradeGroupStats:
@@ -98,19 +100,6 @@ class HourRow:
     # Sum of net P&L of losing trades in this hour (<= 0): how much equity
     # this hour gave back. Documented as "drawdown contribution".
     drawdown_contribution: float = 0.0
-
-
-@dataclass
-class SessionWindow:
-    """A DST-aware session window in a regional IANA timezone."""
-    name: str
-    timezone: str                    # IANA name, e.g. "Europe/London"
-    start: str                       # "HH:MM" local time-of-day, inclusive
-    end: str                         # "HH:MM" local time-of-day, exclusive
-
-    def describe(self) -> dict:
-        return {"name": self.name, "timezone": self.timezone,
-                "start": self.start, "end": self.end}
 
 
 @dataclass

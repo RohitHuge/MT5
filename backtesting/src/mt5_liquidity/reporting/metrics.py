@@ -26,6 +26,8 @@ def print_backtest_report(result: BacktestResult, symbol: str, from_date: str, t
     print(f"  Skips — daily lim : {result.setups_skipped_daily_loss}")
     print(f"  Skips — sizing    : {result.setups_skipped_sizing}")
     print(f"  Skips — no bar    : {result.setups_skipped_no_next_bar}")
+    if result.setups_skipped_session:
+        print(f"  Skips — session   : {result.setups_skipped_session}")
     print()
 
     _print_stats(result.stats)

@@ -24,93 +24,23 @@ for multi-label analysis if ever needed.
 """
 from __future__ import annotations
 
-from datetime import datetime, time
-from zoneinfo import ZoneInfo
-
 from mt5_liquidity.backtest.positions import ClosedPosition
 
+# Pure classification logic lives in session_classifier to avoid circular
+# imports (engine also imports classify_session / resolve_sessions).
+from mt5_liquidity.session_classifier import (  # noqa: F401 — re-exported
+    DEFAULT_SESSIONS,
+    OVERLAP_NAME,
+    OFF_SESSION_NAME,
+    PRECEDENCE,
+    SessionWindow,
+    classify_session,
+    in_window,
+    resolve_sessions,
+)
+
 from .aggregation import aggregate_trade_stats
-from .models import SessionRow, SessionWindow
-
-DEFAULT_SESSIONS: list[SessionWindow] = [
-    SessionWindow(name="TOKYO", timezone="Asia/Tokyo", start="09:00", end="15:00"),
-    SessionWindow(name="LONDON", timezone="Europe/London", start="08:00", end="17:00"),
-    SessionWindow(name="NEW_YORK", timezone="America/New_York", start="08:00", end="17:00"),
-]
-
-OVERLAP_NAME = "LONDON_NY_OVERLAP"
-OFF_SESSION_NAME = "OFF_SESSION"
-# Precedence when a trade falls inside more than one window. The overlap is
-# checked first so it wins over its constituent sessions.
-PRECEDENCE = [OVERLAP_NAME, "LONDON", "NEW_YORK", "TOKYO"]
-
-
-def resolve_sessions(session_overrides: dict[str, dict[str, str]] | None = None) -> list[SessionWindow]:
-    """Merge optional config overrides into the default session windows.
-
-    Override format: {"LONDON": {"tz": "Europe/London", "start": "08:00",
-    "end": "16:30"}}. Unknown keys and malformed values raise ValueError so
-    bad configuration surfaces instead of silently misclassifying trades.
-    """
-    windows = {w.name: w for w in DEFAULT_SESSIONS}
-    for name, override in (session_overrides or {}).items():
-        if name not in windows:
-            raise ValueError(
-                f"Unknown session override {name!r}; valid sessions: "
-                f"{sorted(windows)}"
-            )
-        tz = override.get("tz", windows[name].timezone)
-        start = override.get("start", windows[name].start)
-        end = override.get("end", windows[name].end)
-        _validate_hhmm(name, "start", start)
-        _validate_hhmm(name, "end", end)
-        try:
-            ZoneInfo(tz)
-        except Exception as exc:
-            raise ValueError(f"Session {name} has unknown timezone {tz!r}: {exc}") from exc
-        windows[name] = SessionWindow(name=name, timezone=tz, start=start, end=end)
-    return list(windows.values())
-
-
-def _validate_hhmm(session: str, field: str, value: str) -> None:
-    try:
-        time.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError(
-            f"Session {session}.{field} must be HH:MM, got {value!r}"
-        ) from exc
-
-
-def in_window(ts_utc: datetime, window: SessionWindow) -> bool:
-    """True when the UTC instant's local time-of-day is inside the window.
-
-    Windows are [start, end) in local wall time. An overnight window
-    (start > end) spans midnight. DST is handled by zoneinfo per-instant.
-    """
-    local = ts_utc.astimezone(ZoneInfo(window.timezone)).time()
-    start = time.fromisoformat(window.start)
-    end = time.fromisoformat(window.end)
-    if start <= end:
-        return start <= local < end
-    return local >= start or local < end
-
-
-def classify_session(
-    ts_utc: datetime,
-    sessions: list[SessionWindow],
-) -> str:
-    """Return the primary (mutually exclusive) session label for an instant."""
-    london = next((w for w in sessions if w.name == "LONDON"), None)
-    new_york = next((w for w in sessions if w.name == "NEW_YORK"), None)
-    for name in PRECEDENCE:
-        if name == OVERLAP_NAME:
-            if london and new_york and in_window(ts_utc, london) and in_window(ts_utc, new_york):
-                return OVERLAP_NAME
-        else:
-            window = next((w for w in sessions if w.name == name), None)
-            if window and in_window(ts_utc, window):
-                return name
-    return OFF_SESSION_NAME
+from .models import SessionRow
 
 
 def analyze_sessions(
