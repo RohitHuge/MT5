@@ -23,16 +23,16 @@ import numpy as np
 from config.settings import mt5_init
 
 # ── Config ────────────────────────────────────────────────────
-SYMBOL         = "XAUUSD"
-LOT            = 0.01
-EMA_FAST       = 3
-EMA_SLOW       = 8
-BARS           = 30
-SL_POINTS      = 80
-TP_POINTS      = 60    # tighter than SL — closes fast on any profitable move
-MAGIC          = 222222
-CHECK_INTERVAL = 5
-COOLDOWN_CYCLES = 2    # cycles to wait after a broker-closed position (SL/TP hit)
+SYMBOL          = "XAUUSD"
+LOT             = 0.01
+EMA_FAST        = 3
+EMA_SLOW        = 8
+BARS            = 30
+SL_POINTS       = 80
+TP_POINTS       = 60    # tighter than SL — closes fast on any profitable move
+MAGIC           = 222222
+CHECK_INTERVAL  = 5
+COOLDOWN_CYCLES = 2     # cycles to wait after SL/TP hit or failed order
 # ──────────────────────────────────────────────────────────────
 
 _running = True
@@ -68,7 +68,12 @@ def our_positions():
 
 
 def close_all_positions():
-    for pos in our_positions():
+    """Returns True only if all positions were closed successfully."""
+    positions = our_positions()
+    if not positions:
+        return True
+    all_ok = True
+    for pos in positions:
         tick = mt5.symbol_info_tick(SYMBOL)
         is_buy = pos.type == mt5.ORDER_TYPE_BUY
         close_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
@@ -95,6 +100,8 @@ def close_all_positions():
         else:
             comment = res.comment if res else str(mt5.last_error())
             print(f"    FAILED to close #{pos.ticket}: {comment}")
+            all_ok = False
+    return all_ok
 
 
 def open_order(order_type):
@@ -140,6 +147,18 @@ def main():
         print("FAILED: MT5 init:", mt5.last_error())
         sys.exit(1)
 
+    # Safety: refuse to trade on a real account
+    account = mt5.account_info()
+    if account is None:
+        print("FAILED: Cannot retrieve account info")
+        mt5.shutdown()
+        sys.exit(1)
+    if account.trade_mode != 0:
+        print(f"SAFETY STOP: Account is not DEMO (trade_mode={account.trade_mode}). Refusing to run.")
+        mt5.shutdown()
+        sys.exit(1)
+    print(f"  Account: DEMO  |  Server: {account.server}  |  Balance: ${account.balance:.2f}")
+
     if not mt5.symbol_select(SYMBOL, True):
         print(f"FAILED: Cannot select {SYMBOL}")
         mt5.shutdown()
@@ -162,7 +181,8 @@ def main():
             time.sleep(CHECK_INTERVAL)
             continue
 
-        closes   = np.array([r["close"] for r in rates], dtype=float)
+        # Use only closed candles (exclude the last forming bar)
+        closes   = np.array([r["close"] for r in rates[:-1]], dtype=float)
         fast_ema = calc_ema(closes, EMA_FAST)
         slow_ema = calc_ema(closes, EMA_SLOW)
 
@@ -185,9 +205,11 @@ def main():
         broker_closed = prev_pos_count > 0 and open_count == 0
         if broker_closed and cooldown == 0:
             cooldown = COOLDOWN_CYCLES
-            print(f"  [SL/TP hit] Cooldown {cooldown} cycles before re-entry")
+            print(f"  [SL/TP hit] Cooldown {COOLDOWN_CYCLES} cycles before re-entry")
         prev_pos_count = open_count
 
+        # Decrement AFTER the trading decision so full count is served
+        cooldown_display = cooldown
         if cooldown > 0:
             cooldown -= 1
 
@@ -199,39 +221,52 @@ def main():
             f"Bias: {bias}  "
             f"Pos: {open_count}  "
             f"P&L: ${total_pnl:+.2f}"
-            + (f"  [cooldown {cooldown}]" if cooldown > 0 else "")
+            + (f"  [cooldown {cooldown_display}]" if cooldown_display > 0 else "")
         )
 
-        # ── Bias-following logic ──────────────────────────────
-        if cooldown > 0:
+        # ── Skip trading during cooldown ──────────────────────
+        if cooldown_display > 0:
             time.sleep(CHECK_INTERVAL)
             continue
 
+        # ── Bias-following logic ──────────────────────────────
         if bull and not has_buy:
             if has_sell:
                 print(f"  >> Bias flipped BULL -- closing SELL, opening BUY")
-                close_all_positions()
+                if not close_all_positions():
+                    print(f"  >> Close failed -- skipping BUY entry, cooldown applied")
+                    cooldown = COOLDOWN_CYCLES
+                    time.sleep(CHECK_INTERVAL)
+                    continue
             else:
                 print(f"  >> BULL bias -- opening BUY")
             res, px, sl, tp = open_order(mt5.ORDER_TYPE_BUY)
             if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                 print(f"     BUY  #{res.order} opened @ {px}  SL {sl}  TP {tp}")
+                prev_pos_count = 1  # guard: if SL/TP hits within next cycle, cooldown fires
             else:
                 comment = res.comment if res else str(mt5.last_error())
-                print(f"     FAILED to open BUY: {comment}")
+                print(f"     FAILED to open BUY: {comment} -- cooldown applied")
+                cooldown = COOLDOWN_CYCLES
 
         elif not bull and not has_sell:
             if has_buy:
                 print(f"  >> Bias flipped BEAR -- closing BUY, opening SELL")
-                close_all_positions()
+                if not close_all_positions():
+                    print(f"  >> Close failed -- skipping SELL entry, cooldown applied")
+                    cooldown = COOLDOWN_CYCLES
+                    time.sleep(CHECK_INTERVAL)
+                    continue
             else:
                 print(f"  >> BEAR bias -- opening SELL")
             res, px, sl, tp = open_order(mt5.ORDER_TYPE_SELL)
             if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                 print(f"     SELL #{res.order} opened @ {px}  SL {sl}  TP {tp}")
+                prev_pos_count = 1  # guard: if SL/TP hits within next cycle, cooldown fires
             else:
                 comment = res.comment if res else str(mt5.last_error())
-                print(f"     FAILED to open SELL: {comment}")
+                print(f"     FAILED to open SELL: {comment} -- cooldown applied")
+                cooldown = COOLDOWN_CYCLES
 
         time.sleep(CHECK_INTERVAL)
 
