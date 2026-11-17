@@ -27,6 +27,7 @@ TRADE_FIELDS = [
     "sl_price", "tp_price", "lots", "pnl_usd", "commission_usd", "net_pnl_usd",
     "exit_reason", "fill_candle_index", "close_candle_index", "bars_held",
     "value_per_point_per_lot", "point",
+    "mae_usd", "mfe_usd", "mae_r", "mfe_r",
 ]
 
 ANALYTICS_SCHEMA_VERSION = 1
@@ -75,8 +76,9 @@ def _pf(pf: float) -> str | float:
 
 def _pf_safe_dict(payload: dict[str, Any]) -> dict[str, Any]:
     """Replace inf profit factors so JSON stays standards-compliant."""
-    if payload.get("profit_factor") == float("inf"):
-        payload["profit_factor"] = "inf"
+    for key in ("profit_factor", "gross_profit_factor", "net_profit_factor"):
+        if payload.get(key) == float("inf"):
+            payload[key] = "inf"
     return payload
 
 
@@ -96,6 +98,10 @@ def _group_csv_row(stats, extra: dict[str, Any]) -> dict[str, Any]:
         "avg_win": s.avg_win,
         "avg_loss": s.avg_loss,
         "profit_factor": _pf(s.profit_factor),
+        "avg_mae_usd": s.avg_mae_usd,
+        "avg_mfe_usd": s.avg_mfe_usd,
+        "worst_mae_usd": s.worst_mae_usd,
+        "best_mfe_usd": s.best_mfe_usd,
     }
     row.update(extra)
     return row
@@ -119,13 +125,13 @@ def _write_analytics_dir(run_dir: Path, bundle: AnalyticsBundle) -> None:
         ["bucket", "min_minutes", "max_minutes", "trade_count", "winners",
          "losers", "breakeven", "win_rate", "gross_profit", "gross_loss",
          "net_pnl", "total_commission", "avg_net_pnl", "avg_win", "avg_loss",
-         "profit_factor", "mae_mfe"],
+         "profit_factor", "avg_mae_usd", "avg_mfe_usd", "worst_mae_usd",
+         "best_mfe_usd"],
         [
             _group_csv_row(b.stats, {
                 "bucket": b.label,
                 "min_minutes": b.min_minutes,
                 "max_minutes": b.max_minutes if b.max_minutes is not None else "",
-                "mae_mfe": d.mae_mfe,
             })
             for b in d.buckets
         ],
@@ -137,7 +143,9 @@ def _write_analytics_dir(run_dir: Path, bundle: AnalyticsBundle) -> None:
         ["hour_utc", f"hour_{bundle.display_timezone.lower()}", "trade_count",
          "winners", "losers", "breakeven", "win_rate", "gross_profit",
          "gross_loss", "net_pnl", "total_commission", "avg_net_pnl",
-         "avg_win", "avg_loss", "profit_factor", "drawdown_contribution"],
+         "avg_win", "avg_loss", "profit_factor", "avg_mae_usd",
+         "avg_mfe_usd", "worst_mae_usd", "best_mfe_usd",
+         "drawdown_contribution"],
         [
             _group_csv_row(r.stats, {
                 "hour_utc": r.hour_utc,
@@ -154,7 +162,8 @@ def _write_analytics_dir(run_dir: Path, bundle: AnalyticsBundle) -> None:
         ["session", "trade_count", "winners", "losers", "breakeven",
          "win_rate", "gross_profit", "gross_loss", "net_pnl",
          "total_commission", "avg_net_pnl", "avg_win", "avg_loss",
-         "profit_factor"],
+         "profit_factor", "avg_mae_usd", "avg_mfe_usd", "worst_mae_usd",
+         "best_mfe_usd"],
         [
             _group_csv_row(r.stats, {"session": r.session})
             for r in bundle.session_rows
@@ -290,8 +299,7 @@ def export_backtest_report(
         "risk": result.risk_summary,
     }
     # JSON has no standard Infinity value; store a stable string for zero-loss runs.
-    if summary["statistics"]["profit_factor"] == float("inf"):
-        summary["statistics"]["profit_factor"] = "inf"
+    _pf_safe_dict(summary["statistics"])
     _write_json(run_dir / "summary.json", summary)
 
     with (run_dir / "trades.csv").open("w", newline="", encoding="utf-8") as handle:

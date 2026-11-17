@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 from dataclasses import asdict, dataclass, field, fields
 from datetime import date, datetime, timedelta, timezone
@@ -443,6 +444,53 @@ class AccountRiskManager:
             allowed=False, state=state, reason_code=reason_code,
             timestamp=ts, action=self.open_position_action,
         )
+
+    def check_daily_risk_budget(
+        self,
+        *,
+        ts: datetime,
+        realised_equity: float,
+        floating_pnl: float,
+        open_position_reserve_usd: float,
+        proposed_risk_usd: float,
+    ) -> RiskDecision:
+        """Admit a trade only when aggregate worst-case daily loss fits.
+
+        ``floating_pnl`` is already part of the mark-to-market daily result.
+        ``open_position_reserve_usd`` must consequently contain only the
+        *additional* loss from each current mark to its executable initial
+        stop, not the whole initial risk.  ``proposed_risk_usd`` is the full
+        executable initial-stop loss (including configured costs) of the new
+        position.  The engine derives both values afresh on every admission,
+        so no reservation can survive a normal, forced, or end-of-run close.
+        """
+        if (not math.isfinite(proposed_risk_usd)
+                or not math.isfinite(open_position_reserve_usd)
+                or proposed_risk_usd < 0 or open_position_reserve_usd < 0):
+            reason = "INVALID_DAILY_RISK_INFORMATION"
+            self.blocked_by_reason[reason] = self.blocked_by_reason.get(reason, 0) + 1
+            return RiskDecision(False, self.state, reason_code=reason, timestamp=ts)
+        if self._daily_baseline is None:
+            # A caller normally invokes on_candle before admissions.  Fail
+            # closed if it has not, rather than admitting against a guessed
+            # daily boundary.
+            reason = "INVALID_DAILY_RISK_INFORMATION"
+            self.blocked_by_reason[reason] = self.blocked_by_reason.get(reason, 0) + 1
+            return RiskDecision(False, self.state, reason_code=reason, timestamp=ts)
+        limit = self._effective_daily_loss_threshold(self._daily_baseline)
+        if limit is None:
+            return RiskDecision(True, self.state, timestamp=ts)
+        daily_pnl = realised_equity + floating_pnl - self._daily_baseline
+        available = limit + daily_pnl - open_position_reserve_usd
+        if proposed_risk_usd <= available:
+            return RiskDecision(True, self.state, observed_value=proposed_risk_usd,
+                                threshold_value=available, timestamp=ts)
+        reason = "DAILY_RISK_BUDGET_EXCEEDED"
+        self.blocked_by_reason[reason] = self.blocked_by_reason.get(reason, 0) + 1
+        return RiskDecision(
+            False, self.state, reason_code=reason,
+            observed_value=proposed_risk_usd, threshold_value=max(0.0, available),
+            timestamp=ts, action="STOP_NEW_ENTRIES")
 
     def check_trade_risk(self, ts: datetime, *, proposed_risk_usd: float,
                          current_equity: float) -> RiskDecision:

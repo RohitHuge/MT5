@@ -56,12 +56,19 @@ def _print_stats(s: LedgerStats) -> None:
     print(f"  Commission (total): ${s.total_commission:,.2f}")
     print(f"  Swap              : {s.cost_note}")
     print(f"  Net P&L           : ${s.net_pnl:+,.2f}")
-    pf = f"{s.profit_factor:.4f}" if s.profit_factor != float("inf") else "inf"
-    print(f"  Profit factor     : {pf}")
+    gross_pf = (f"{s.gross_profit_factor:.4f}"
+                if s.gross_profit_factor != float("inf") else "inf")
+    net_pf = (f"{s.net_profit_factor:.4f}"
+              if s.net_profit_factor != float("inf") else "inf")
+    print(f"  Gross profit factor: {gross_pf}")
+    print(f"  Net profit factor  : {net_pf}")
     print(f"  Avg win (net)     : ${s.avg_win:,.2f}")
     print(f"  Avg loss (net)    : ${s.avg_loss:,.2f}")
     print(f"  Max drawdown      : ${s.max_drawdown_usd:,.2f} ({s.max_drawdown_pct:.2f}%)")
     print(f"  Final equity      : ${s.final_equity:,.2f}")
+    if s.total_trades:
+        print(f"  Avg MAE / MFE     : ${s.avg_mae_usd:,.2f} / ${s.avg_mfe_usd:,.2f}"
+              f"  (worst ${s.worst_mae_usd:,.2f}, best ${s.best_mfe_usd:,.2f})")
     print()
 
 

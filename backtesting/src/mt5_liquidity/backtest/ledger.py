@@ -18,6 +18,7 @@ class LedgerStats:
     gross_loss: float
     total_commission: float
     net_pnl: float
+    # Backward-compatible alias for gross_profit_factor.
     profit_factor: float  # gross profit / abs(gross loss), before commission
     avg_win: float
     avg_loss: float
@@ -27,6 +28,14 @@ class LedgerStats:
     max_consecutive_wins: int = 0
     max_consecutive_losses: int = 0
     cost_note: str = "swap excluded; profit factor is gross (pre-commission)"
+    # Phase 4 M2: intratrade excursion aggregates (USD). avg over trades;
+    # worst_mae is the most negative single-trade MAE; best_mfe the largest.
+    avg_mae_usd: float = 0.0
+    avg_mfe_usd: float = 0.0
+    worst_mae_usd: float = 0.0
+    best_mfe_usd: float = 0.0
+    gross_profit_factor: float = 0.0
+    net_profit_factor: float = 0.0
 
 
 @dataclass
@@ -57,6 +66,10 @@ class TradeLedger:
 
         wins = [t for t in trades if t.net_pnl_usd > 0]
         losses = [t for t in trades if t.net_pnl_usd <= 0]
+        net_wins = sum(t.net_pnl_usd for t in wins)
+        net_losses = sum(t.net_pnl_usd for t in losses)
+        net_pf = (net_wins / abs(net_losses) if net_losses < 0
+                  else (float("inf") if net_wins > 0 else 0.0))
         avg_win = sum(t.net_pnl_usd for t in wins) / len(wins) if wins else 0.0
         avg_loss = sum(t.net_pnl_usd for t in losses) / len(losses) if losses else 0.0
 
@@ -81,6 +94,11 @@ class TradeLedger:
             max_wins = max(max_wins, current_wins)
             max_losses = max(max_losses, current_losses)
 
+        avg_mae = sum(t.mae_usd for t in trades) / total
+        avg_mfe = sum(t.mfe_usd for t in trades) / total
+        worst_mae = min(t.mae_usd for t in trades)
+        best_mfe = max(t.mfe_usd for t in trades)
+
         return LedgerStats(
             total_trades=total, winners=len(wins), losers=len(losses),
             win_rate=len(wins) / total, gross_profit=round(gross_profit, 2),
@@ -91,4 +109,8 @@ class TradeLedger:
             max_drawdown_usd=round(max_dd_usd, 2), max_drawdown_pct=round(max_dd_pct, 4),
             final_equity=round(self.initial_equity + net_pnl, 2),
             max_consecutive_wins=max_wins, max_consecutive_losses=max_losses,
+            avg_mae_usd=round(avg_mae, 2), avg_mfe_usd=round(avg_mfe, 2),
+            worst_mae_usd=round(worst_mae, 2), best_mfe_usd=round(best_mfe, 2),
+            gross_profit_factor=round(gross_pf, 4) if gross_pf != float("inf") else gross_pf,
+            net_profit_factor=round(net_pf, 4) if net_pf != float("inf") else net_pf,
         )

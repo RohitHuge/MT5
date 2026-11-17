@@ -49,6 +49,10 @@ def aggregate_trade_stats(trades: list[ClosedPosition]) -> TradeGroupStats:
         avg_win=(sum(t.net_pnl_usd for t in winners) / len(winners)) if winners else 0.0,
         avg_loss=(sum(t.net_pnl_usd for t in losers) / len(losers)) if losers else 0.0,
         profit_factor=profit_factor,
+        avg_mae_usd=sum(t.mae_usd for t in trades) / count,
+        avg_mfe_usd=sum(t.mfe_usd for t in trades) / count,
+        worst_mae_usd=min(t.mae_usd for t in trades),
+        best_mfe_usd=max(t.mfe_usd for t in trades),
     )
 
 

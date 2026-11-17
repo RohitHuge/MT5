@@ -3,7 +3,7 @@
 **Scope:** `/backtesting` only  
 **Repository:** `RohitHuge/MT5`  
 **Target branch:** `main`  
-**Status:** Phase 1 code committed (verification partially complete — see `PHASE1_IMPLEMENTATION_REPORT.md`). Phase 2 implemented and verified on 2026-11-11 (see `PHASE2_IMPLEMENTATION_REPORT.md`). Phase 3 implemented and verified on 2026-11-11 (see `PHASE3_IMPLEMENTATION_REPORT.md`). Phase 4 not started.  
+**Status:** Phase 1 code committed (verification partially complete — see `PHASE1_IMPLEMENTATION_REPORT.md`). Phase 2 implemented and verified on 2026-11-11 (see `PHASE2_IMPLEMENTATION_REPORT.md`). Phase 3 implemented and verified on 2026-11-11 (see `PHASE3_IMPLEMENTATION_REPORT.md`). Aggregate daily-risk consolidation, selective Phase 4.1 accounting corrections, and MAE/MFE recovery were implemented and validated on 2026-11-15; the comparative-experiment Phase 4 acceptance criteria below remain incomplete. See `INTEGRATION_REVIEW_STRICT_DAILY_LOSS.md`.  
 **Purpose:** Correct historical execution first, then add time-based performance analytics, account-level profit protection, and controlled comparative experiments.
 
 ---

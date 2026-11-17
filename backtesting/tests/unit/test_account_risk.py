@@ -402,6 +402,65 @@ class TestPerTradeRiskCeiling:
         assert decision.reason_code == "MAX_RISK_PER_TRADE_PCT"
 
 
+class TestAggregateDailyRiskAdmission:
+    """The engine supplies fresh mark-to-stop reserves for open positions."""
+
+    def _admit(self, mgr, *, floating=0.0, reserve=0.0, proposed=0.0, ts=MONDAY):
+        return mgr.check_daily_risk_budget(
+            ts=ts, realised_equity=10_000.0, floating_pnl=floating,
+            open_position_reserve_usd=reserve, proposed_risk_usd=proposed)
+
+    def test_one_position_within_budget_is_allowed(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        mgr.on_candle(MONDAY, realised_equity=10_000.0, floating_pnl=0.0, open_positions=0)
+        assert self._admit(mgr, proposed=45.0).allowed
+
+    def test_open_reservation_and_proposal_cannot_exceed_budget(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        mgr.on_candle(MONDAY, realised_equity=10_000.0, floating_pnl=0.0, open_positions=1)
+        decision = self._admit(mgr, reserve=30.0, proposed=25.0)
+        assert not decision.allowed
+        assert decision.reason_code == "DAILY_RISK_BUDGET_EXCEEDED"
+
+    def test_aggregate_risk_exactly_at_budget_is_allowed(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        mgr.on_candle(MONDAY, realised_equity=10_000.0, floating_pnl=0.0, open_positions=1)
+        assert self._admit(mgr, reserve=30.0, proposed=20.0).allowed
+
+    def test_closed_or_forced_position_has_no_stale_reservation(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        mgr.on_candle(MONDAY, realised_equity=10_000.0, floating_pnl=0.0, open_positions=1)
+        assert not self._admit(mgr, reserve=45.0, proposed=10.0).allowed
+        # Both ordinary and forced closes are represented by the engine
+        # omitting the closed position from the freshly-derived reserve.
+        assert self._admit(mgr, reserve=0.0, proposed=45.0).allowed
+
+    def test_floating_loss_and_stop_reserve_are_not_double_counted(self):
+        mgr = _manager(daily_loss_usd=100.0)
+        mgr.on_candle(MONDAY, realised_equity=10_000.0, floating_pnl=0.0, open_positions=1)
+        # The open trade is already -$30 in MTM.  Only its $40 additional
+        # path to stop is reserved, leaving $30 for the proposal: exactly $100.
+        assert self._admit(mgr, floating=-30.0, reserve=40.0, proposed=30.0).allowed
+
+    def test_day_rollover_rebases_the_aggregate_budget(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        mgr.on_candle(MONDAY, realised_equity=10_000.0, floating_pnl=0.0, open_positions=0)
+        assert not self._admit(mgr, floating=-30.0, reserve=15.0, proposed=10.0).allowed
+        mgr.on_candle(MONDAY + timedelta(days=1), realised_equity=9_970.0,
+                      floating_pnl=0.0, open_positions=0)
+        assert self._admit(mgr, proposed=50.0, ts=MONDAY + timedelta(days=1)).allowed
+
+    def test_missing_or_invalid_risk_information_fails_closed(self):
+        mgr = _manager(daily_loss_usd=50.0)
+        decision = self._admit(mgr, proposed=20.0)
+        assert not decision.allowed
+        assert decision.reason_code == "INVALID_DAILY_RISK_INFORMATION"
+        mgr.on_candle(MONDAY, realised_equity=10_000.0, floating_pnl=0.0, open_positions=0)
+        decision = self._admit(mgr, reserve=float("nan"), proposed=20.0)
+        assert not decision.allowed
+        assert decision.reason_code == "INVALID_DAILY_RISK_INFORMATION"
+
+
 class TestOpenPositionPolicySignal:
     def test_stop_new_entries_policy_signal(self):
         mgr = _manager(open_position_action="STOP_NEW_ENTRIES", daily_loss_usd=100.0)
