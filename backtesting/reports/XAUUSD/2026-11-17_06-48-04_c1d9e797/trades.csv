@@ -1,0 +1,1 @@
+setup_id,direction,fill_ts,close_ts,fill_price,close_price,sl_price,tp_price,lots,pnl_usd,commission_usd,swap_usd,net_pnl_usd,exit_reason,fill_candle_index,close_candle_index,bars_held,value_per_point_per_lot,point,mae_usd,mfe_usd,mae_r,mfe_r
