@@ -1,0 +1,46 @@
+{
+  "force_closed": 0,
+  "from_date": "2026-08-13",
+  "generated_at_utc": "2026-11-17T07:09:25.206067+00:00",
+  "risk": {
+    "enabled": false
+  },
+  "run_id": "2026-11-17_07-09-25_75ffb6ce",
+  "setups": {
+    "entry_ready": 31,
+    "skipped_daily_loss": 0,
+    "skipped_max_positions": 0,
+    "skipped_no_next_bar": 0,
+    "skipped_sizing": 5,
+    "total": 540
+  },
+  "statistics": {
+    "avg_loss": -43.91,
+    "avg_mae_usd": -94.74,
+    "avg_mfe_usd": 54.63,
+    "avg_win": 89.47,
+    "best_mfe_usd": 107.66,
+    "cost_note": "profit factor is gross (pre-commission, pre-swap)",
+    "final_equity": 9917.16,
+    "gross_loss": -351.24,
+    "gross_profit": 268.4,
+    "gross_profit_factor": 0.7641,
+    "losers": 8,
+    "max_consecutive_losses": 3,
+    "max_consecutive_wins": 1,
+    "max_drawdown_pct": 1.3539,
+    "max_drawdown_usd": 136.11,
+    "net_pnl": -82.84,
+    "net_profit_factor": 0.7641,
+    "profit_factor": 0.7641,
+    "total_commission": 0.0,
+    "total_swap": 0.0,
+    "total_trades": 11,
+    "win_rate": 0.2727272727272727,
+    "winners": 3,
+    "worst_mae_usd": -536.8
+  },
+  "symbol": "XAUUSD",
+  "to_date": "2026-11-10",
+  "trades_opened": 11
+}
