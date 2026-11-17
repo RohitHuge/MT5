@@ -108,6 +108,8 @@ class BacktestConfig:
     exit_slippage_points: int = 0  # adverse exit slippage; zero preserves legacy assumption
     max_daily_loss_pct: float = 3.0
     initial_equity: float = 10_000.0
+    # Daily risk accounting. IANA zone, e.g. America/New_York or UTC.
+    trading_day_timezone: str = "UTC"
     min_stop_distance_points: float = 5.0
     max_lots_per_trade: float = 1.0
     analytics_display_timezone: str = "UTC"

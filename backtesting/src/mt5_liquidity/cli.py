@@ -146,6 +146,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     cfg.max_positions = args.max_positions
     cfg.max_daily_loss_pct = args.max_daily_loss_pct
     cfg.initial_equity = args.equity
+    cfg.trading_day_timezone = getattr(args, "trading_day_timezone", "UTC")
 
     # Phase 3: optional account-risk manager activation via CLI. getattr
     # defaults keep cmd_backtest callable with hand-built argument namespaces
@@ -202,33 +203,40 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     if agg.incomplete_windows:
         print(f"  Warning: {len(agg.incomplete_windows)} incomplete M15 window(s) dropped from backtest.")
 
-    # Retrieve actual symbol metadata from the connected MT5 terminal.
+    # Retrieve symbol metadata: use manual CLI flags if all six are supplied,
+    # otherwise fall back to live MT5 terminal.
     from .backtest.engine import SymbolMeta, run_backtest
     sym_meta: SymbolMeta | None = None
-    adapter3 = MT5Adapter(cfg)
-    try:
-        if adapter3.connect():
-            si = adapter3.get_symbol_info(args.symbol)
-            # Keys must match MT5Adapter.get_symbol_info()'s public dictionary.
-            sym_meta = SymbolMeta(
-                point=si["point"],
-                tick_value=si["tick_value"],
-                tick_size=si["tick_size"],
-                volume_min=si["volume_min"],
-                volume_max=si["volume_max"],
-                volume_step=si["volume_step"],
+    _manual = {k: getattr(args, k, None)
+               for k in ("point", "tick_value", "tick_size",
+                         "volume_min", "volume_max", "volume_step")}
+    if all(v is not None for v in _manual.values()):
+        sym_meta = SymbolMeta(**_manual)
+    else:
+        adapter3 = MT5Adapter(cfg)
+        try:
+            if adapter3.connect():
+                si = adapter3.get_symbol_info(args.symbol)
+                sym_meta = SymbolMeta(
+                    point=si["point"],
+                    tick_value=si["tick_value"],
+                    tick_size=si["tick_size"],
+                    volume_min=si["volume_min"],
+                    volume_max=si["volume_max"],
+                    volume_step=si["volume_step"],
+                )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Could not retrieve symbol metadata for %s", args.symbol
             )
-    except Exception:
-        logging.getLogger(__name__).exception(
-            "Could not retrieve symbol metadata for %s", args.symbol
-        )
-    finally:
-        adapter3.disconnect()
+        finally:
+            adapter3.disconnect()
 
     if sym_meta is None:
         print(
             f"ERROR: Could not retrieve symbol metadata for {args.symbol}. "
-            "Check the preceding MT5/metadata error for details.",
+            "Supply --point/--tick-value/--tick-size/--volume-min/--volume-max/"
+            "--volume-step to run without MT5, or check the MT5 connection.",
             file=sys.stderr,
         )
         return 1
@@ -320,6 +328,21 @@ def main() -> None:
     p_bt.add_argument("--max-positions", type=int, default=1)
     p_bt.add_argument("--max-daily-loss-pct", type=float, default=3.0)
     p_bt.add_argument("--equity", type=float, default=10_000.0)
+    p_bt.add_argument("--trading-day-timezone", default="UTC",
+                      help="IANA timezone for daily loss reset (e.g. America/New_York)")
+    # Manual symbol metadata — lets backtest run without a live MT5 connection.
+    p_bt.add_argument("--point", type=float, default=None,
+                      help="Symbol point size (e.g. 0.01 for XAUUSD)")
+    p_bt.add_argument("--tick-value", type=float, default=None,
+                      help="USD value of one tick per lot (e.g. 1.0 for XAUUSD)")
+    p_bt.add_argument("--tick-size", type=float, default=None,
+                      help="Minimum price movement (e.g. 0.01 for XAUUSD)")
+    p_bt.add_argument("--volume-min", type=float, default=None,
+                      help="Minimum lot size (e.g. 0.01)")
+    p_bt.add_argument("--volume-max", type=float, default=None,
+                      help="Maximum lot size (e.g. 100.0)")
+    p_bt.add_argument("--volume-step", type=float, default=None,
+                      help="Lot size increment (e.g. 0.01)")
 
     # Phase 3: account-level risk manager (disabled unless --account-risk).
     p_bt.add_argument("--account-risk", action="store_true",
