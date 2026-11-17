@@ -35,6 +35,8 @@ def run_scalp_backtest(
     symbol_meta: SymbolMeta,
     sl_swing_bars: int = 4,
     sl_buffer_points: int = 15,
+    rsi_min_buy: float = 55.0,
+    rsi_max_sell: float = 45.0,
 ) -> BacktestResult:
     """Run an EMA-crossover scalp backtest on M5 data.
 
@@ -67,6 +69,8 @@ def run_scalp_backtest(
         point=point,
         sl_swing_bars=sl_swing_bars,
         sl_buffer_points=sl_buffer_points,
+        rsi_min_buy=rsi_min_buy,
+        rsi_max_sell=rsi_max_sell,
     )
 
     # Map fill_bar_index → list of signals (fill on NEXT candle after signal)

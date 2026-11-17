@@ -382,6 +382,8 @@ def cmd_backtest_scalp(args: argparse.Namespace) -> int:
         m5_candles=m5, config=cfg, symbol_meta=sym_meta,
         sl_swing_bars=args.sl_swing_bars,
         sl_buffer_points=args.sl_buffer_points,
+        rsi_min_buy=args.rsi_min_buy,
+        rsi_max_sell=args.rsi_max_sell,
     )
 
     print_backtest_report(result, args.symbol, args.from_date, args.to_date)
@@ -526,6 +528,10 @@ def main() -> None:
     p_sc.add_argument("--skip-sessions",      nargs="+",  default=["TOKYO", "OFF_SESSION"],
                       metavar="SESSION",
                       help="Block entries in these sessions (default: TOKYO OFF_SESSION)")
+    p_sc.add_argument("--rsi-min-buy",         type=float, default=55.0,
+                      help="Minimum RSI14 to allow a BUY crossover signal (default 55)")
+    p_sc.add_argument("--rsi-max-sell",        type=float, default=45.0,
+                      help="Maximum RSI14 to allow a SELL crossover signal (default 45)")
     p_sc.add_argument("--swap-long",          type=float, default=0.0)
     p_sc.add_argument("--swap-short",         type=float, default=0.0)
     # Manual symbol metadata
