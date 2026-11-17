@@ -147,6 +147,8 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     cfg.max_daily_loss_pct = args.max_daily_loss_pct
     cfg.initial_equity = args.equity
     cfg.trading_day_timezone = getattr(args, "trading_day_timezone", "UTC")
+    cfg.swap_long_points = getattr(args, "swap_long", 0.0)
+    cfg.swap_short_points = getattr(args, "swap_short", 0.0)
 
     # Phase 3: optional account-risk manager activation via CLI. getattr
     # defaults keep cmd_backtest callable with hand-built argument namespaces
@@ -330,6 +332,12 @@ def main() -> None:
     p_bt.add_argument("--equity", type=float, default=10_000.0)
     p_bt.add_argument("--trading-day-timezone", default="UTC",
                       help="IANA timezone for daily loss reset (e.g. America/New_York)")
+    p_bt.add_argument("--swap-long", type=float, default=0.0,
+                      help="Overnight swap for long positions in broker points "
+                           "(negative=cost, e.g. -69.21 for Vantage XAUUSD)")
+    p_bt.add_argument("--swap-short", type=float, default=0.0,
+                      help="Overnight swap for short positions in broker points "
+                           "(positive=credit, e.g. 30.92 for Vantage XAUUSD)")
     # Manual symbol metadata — lets backtest run without a live MT5 connection.
     p_bt.add_argument("--point", type=float, default=None,
                       help="Symbol point size (e.g. 0.01 for XAUUSD)")

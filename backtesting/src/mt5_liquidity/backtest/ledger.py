@@ -1,7 +1,7 @@
 """Trade ledger: collect closed positions and compute summary statistics.
 
 Profit factor is gross (before commission); net P&L and win/loss classification
-include commission. Swap remains excluded unless explicitly modelled later.
+include commission and swap.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -25,9 +25,10 @@ class LedgerStats:
     max_drawdown_usd: float
     max_drawdown_pct: float
     final_equity: float
+    total_swap: float = 0.0
     max_consecutive_wins: int = 0
     max_consecutive_losses: int = 0
-    cost_note: str = "swap excluded; profit factor is gross (pre-commission)"
+    cost_note: str = "profit factor is gross (pre-commission, pre-swap)"
     # Phase 4 M2: intratrade excursion aggregates (USD). avg over trades;
     # worst_mae is the most negative single-trade MAE; best_mfe the largest.
     avg_mae_usd: float = 0.0
@@ -61,7 +62,8 @@ class TradeLedger:
         gross_profit = sum(t.pnl_usd for t in trades if t.pnl_usd > 0)
         gross_loss = sum(t.pnl_usd for t in trades if t.pnl_usd <= 0)
         commission = sum(t.commission_usd for t in trades)
-        net_pnl = gross_profit + gross_loss - commission
+        swap = sum(t.swap_usd for t in trades)
+        net_pnl = gross_profit + gross_loss - commission + swap
         gross_pf = gross_profit / abs(gross_loss) if gross_loss else float("inf")
 
         wins = [t for t in trades if t.net_pnl_usd > 0]
@@ -108,6 +110,7 @@ class TradeLedger:
             avg_win=round(avg_win, 2), avg_loss=round(avg_loss, 2),
             max_drawdown_usd=round(max_dd_usd, 2), max_drawdown_pct=round(max_dd_pct, 4),
             final_equity=round(self.initial_equity + net_pnl, 2),
+            total_swap=round(swap, 2),
             max_consecutive_wins=max_wins, max_consecutive_losses=max_losses,
             avg_mae_usd=round(avg_mae, 2), avg_mfe_usd=round(avg_mfe, 2),
             worst_mae_usd=round(worst_mae, 2), best_mfe_usd=round(best_mfe, 2),

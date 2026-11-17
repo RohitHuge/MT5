@@ -117,6 +117,12 @@ def run_backtest(
     mark_to_market_curve: list[MarkToMarketPoint] = []
     day_start_equity: dict[date, float] = {}
 
+    swap_long = config.swap_long_points
+    swap_short = config.swap_short_points
+    swap_triple_day = config.swap_triple_day
+    _swap_active = (swap_long != 0.0 or swap_short != 0.0)
+    _prev_candle_date: date | None = None
+
     # Phase 3: one account-risk manager per run. When disabled the engine
     # keeps its legacy inline daily-loss guard and the legacy behaviour is
     # bit-for-bit unchanged.
@@ -142,6 +148,22 @@ def run_backtest(
         # so a non-UTC aware input cannot silently reset the risk day locally.
         candle_utc = candle.timestamp.astimezone(timezone.utc)
         candle_date = candle_utc.date()
+
+        # Apply overnight swap when the UTC date rolls over and swap is configured.
+        # Vantage server time ≈ UTC+2; the swap is credited/charged at ~23:57 server
+        # time, which falls just before midnight UTC in summer (UTC+3) and just after
+        # in winter (UTC+2). Using the UTC date boundary is a close-enough proxy for
+        # backtesting purposes; it fires once per calendar day at the first M5 bar
+        # after midnight UTC, never double-counts, and correctly identifies the triple-
+        # swap day from the *previous* day's weekday (the night before rolls into the
+        # next day — e.g. Wednesday night is candle_date=Thursday, prev=Wednesday).
+        if _swap_active and _prev_candle_date is not None and candle_date != _prev_candle_date:
+            triple = (_prev_candle_date.weekday() == swap_triple_day)
+            multiplier = 3.0 if triple else 1.0
+            for pos in open_positions:
+                swap_pts = swap_long if pos.fill.direction == "BUY" else swap_short
+                pos.accrue_swap(swap_pts, multiplier)
+        _prev_candle_date = candle_date
 
         # Evaluate account risk against this candle's mark-to-market result
         # before ordinary SL/TP bookkeeping.  This prevents a position whose

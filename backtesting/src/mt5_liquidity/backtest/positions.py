@@ -38,6 +38,7 @@ class ClosedPosition:
     value_per_point_per_lot: float
     point: float
     commission_usd: float = 0.0
+    swap_usd: float = 0.0          # total overnight swap charged/credited
     # Phase 4 M2: intratrade excursions (USD, defaulted for backward compat).
     # mae_usd <= 0 (worst adverse exit value seen), mfe_usd >= 0 (best
     # favourable exit value seen); the realised outcome is always within
@@ -49,7 +50,7 @@ class ClosedPosition:
 
     @property
     def net_pnl_usd(self) -> float:
-        return round(self.pnl_usd - self.commission_usd, 2)
+        return round(self.pnl_usd - self.commission_usd + self.swap_usd, 2)
 
 
 @dataclass
@@ -58,11 +59,18 @@ class OpenPosition:
     value_per_point_per_lot: float
     point: float
     spread_points: int = 0
+    accrued_swap_usd: float = 0.0
     exit_slippage_points: int = 0
     # Intratrade excursion accumulators (Phase 4 M2). Both start at 0.0 so a
     # trade that never moves against (or for) the position reports 0.
     mae_usd: float = 0.0
     mfe_usd: float = 0.0
+
+    def accrue_swap(self, swap_points: float, multiplier: float = 1.0) -> None:
+        """Add one night's swap charge (negative=cost, positive=credit)."""
+        self.accrued_swap_usd += round(
+            swap_points * multiplier * self.value_per_point_per_lot * self.fill.lots, 4
+        )
 
     def _spread_price(self) -> float:
         return self.spread_points * self.point
@@ -237,7 +245,7 @@ class OpenPosition:
             close_candle_index=candle_index, fill_ts=self.fill.fill_candle_ts,
             close_ts=candle_ts, bars_held=candle_index - self.fill.fill_candle_index,
             value_per_point_per_lot=self.value_per_point_per_lot, point=self.point,
-            commission_usd=commission_usd,
+            commission_usd=commission_usd, swap_usd=round(self.accrued_swap_usd, 2),
             mae_usd=round(mae_usd, 2), mfe_usd=round(mfe_usd, 2),
             mae_r=mae_r, mfe_r=mfe_r,
         )

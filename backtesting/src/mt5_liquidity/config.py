@@ -110,6 +110,11 @@ class BacktestConfig:
     initial_equity: float = 10_000.0
     # Daily risk accounting. IANA zone, e.g. America/New_York or UTC.
     trading_day_timezone: str = "UTC"
+    # Overnight swap rates in broker points (negative = cost, positive = credit).
+    # Vantage XAUUSD defaults: long=-69.21, short=+30.92, triple on Wednesday.
+    swap_long_points: float = 0.0
+    swap_short_points: float = 0.0
+    swap_triple_day: int = 2    # 0=Mon…6=Sun; 2=Wednesday (MT5 convention)
     min_stop_distance_points: float = 5.0
     max_lots_per_trade: float = 1.0
     analytics_display_timezone: str = "UTC"

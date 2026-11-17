@@ -29,7 +29,8 @@ def aggregate_trade_stats(trades: list[ClosedPosition]) -> TradeGroupStats:
     gross_profit = sum(t.pnl_usd for t in trades if t.pnl_usd > 0)
     gross_loss = sum(t.pnl_usd for t in trades if t.pnl_usd <= 0)
     total_commission = sum(t.commission_usd for t in trades)
-    net_pnl = gross_profit + gross_loss - total_commission
+    total_swap = sum(t.swap_usd for t in trades)
+    net_pnl = gross_profit + gross_loss - total_commission + total_swap
 
     profit_factor = (
         gross_profit / abs(gross_loss) if gross_loss != 0 else float("inf")

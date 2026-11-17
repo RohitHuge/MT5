@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 TRADE_FIELDS = [
     "setup_id", "direction", "fill_ts", "close_ts", "fill_price", "close_price",
-    "sl_price", "tp_price", "lots", "pnl_usd", "commission_usd", "net_pnl_usd",
+    "sl_price", "tp_price", "lots", "pnl_usd", "commission_usd", "swap_usd", "net_pnl_usd",
     "exit_reason", "fill_candle_index", "close_candle_index", "bars_held",
     "value_per_point_per_lot", "point",
     "mae_usd", "mfe_usd", "mae_r", "mfe_r",
@@ -371,7 +371,9 @@ def export_backtest_report(
             "spread_points": config.spread_points,
             "slippage_points": config.slippage_points,
             "commission_usd_per_lot_per_side": config.commission_usd,
-            "swap": "excluded",
+            "swap_long_points": config.swap_long_points,
+            "swap_short_points": config.swap_short_points,
+            "swap_triple_day": config.swap_triple_day,
             "note": stats.cost_note,
         },
         "position_sizing_rejections": [

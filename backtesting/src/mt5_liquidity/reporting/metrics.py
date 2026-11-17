@@ -31,15 +31,26 @@ def print_backtest_report(result: BacktestResult, symbol: str, from_date: str, t
     _print_stats(result.stats)
 
     if result.closed_positions:
+        any_swap = any(t.swap_usd != 0.0 for t in result.closed_positions)
         print("  Trade log:")
-        print(f"  {'Setup ID':<30} {'Dir':<5} {'Fill':>8} {'Close':>8} {'Gross':>8} {'Comm':>7} {'Net':>8} {'Exit':<12}")
-        print("  " + "-" * 92)
-        for t in result.closed_positions:
-            print(
-                f"  {t.setup_id:<30} {t.direction:<5} {t.fill_price:>8.2f} "
-                f"{t.close_price:>8.2f} {t.pnl_usd:>+8.2f} {t.commission_usd:>7.2f} "
-                f"{t.net_pnl_usd:>+8.2f} {t.exit_reason:<12}"
-            )
+        if any_swap:
+            print(f"  {'Setup ID':<30} {'Dir':<5} {'Fill':>8} {'Close':>8} {'Gross':>8} {'Comm':>7} {'Swap':>7} {'Net':>8} {'Exit':<12}")
+            print("  " + "-" * 101)
+            for t in result.closed_positions:
+                print(
+                    f"  {t.setup_id:<30} {t.direction:<5} {t.fill_price:>8.2f} "
+                    f"{t.close_price:>8.2f} {t.pnl_usd:>+8.2f} {t.commission_usd:>7.2f} "
+                    f"{t.swap_usd:>+7.2f} {t.net_pnl_usd:>+8.2f} {t.exit_reason:<12}"
+                )
+        else:
+            print(f"  {'Setup ID':<30} {'Dir':<5} {'Fill':>8} {'Close':>8} {'Gross':>8} {'Comm':>7} {'Net':>8} {'Exit':<12}")
+            print("  " + "-" * 92)
+            for t in result.closed_positions:
+                print(
+                    f"  {t.setup_id:<30} {t.direction:<5} {t.fill_price:>8.2f} "
+                    f"{t.close_price:>8.2f} {t.pnl_usd:>+8.2f} {t.commission_usd:>7.2f} "
+                    f"{t.net_pnl_usd:>+8.2f} {t.exit_reason:<12}"
+                )
     print()
 
 
@@ -54,7 +65,10 @@ def _print_stats(s: LedgerStats) -> None:
     print(f"  Gross profit      : ${s.gross_profit:,.2f}")
     print(f"  Gross loss        : ${s.gross_loss:,.2f}")
     print(f"  Commission (total): ${s.total_commission:,.2f}")
-    print(f"  Swap              : {s.cost_note}")
+    if s.total_swap != 0.0:
+        print(f"  Swap (total)      : ${s.total_swap:+,.2f}")
+    else:
+        print(f"  Swap              : {s.cost_note}")
     print(f"  Net P&L           : ${s.net_pnl:+,.2f}")
     gross_pf = (f"{s.gross_profit_factor:.4f}"
                 if s.gross_profit_factor != float("inf") else "inf")
