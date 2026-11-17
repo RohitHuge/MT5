@@ -1,4 +1,4 @@
-"""CLI entry point — four subcommands: inspect, fetch, zones, backtest."""
+"""CLI entry point — five subcommands: inspect, fetch, zones, backtest, backtest-scalp."""
 from __future__ import annotations
 
 import argparse
@@ -294,6 +294,128 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backtest_scalp(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.risk_pct          = args.risk_pct
+    cfg.rr_target         = args.rr_target
+    cfg.max_positions     = args.max_positions
+    cfg.max_daily_loss_pct = args.max_daily_loss_pct
+    cfg.initial_equity    = args.equity
+    cfg.spread_points     = args.spread_points
+    cfg.skip_sessions     = getattr(args, "skip_sessions", []) or []
+    cfg.swap_long_points  = getattr(args, "swap_long", 0.0)
+    cfg.swap_short_points = getattr(args, "swap_short", 0.0)
+
+    from .config import AccountRiskConfig, validate_account_risk_config
+    cfg.account_risk = AccountRiskConfig(
+        enabled=True,
+        daily_target_usd=args.daily_target,
+        daily_loss_usd=args.daily_loss,
+    )
+    risk_error = validate_account_risk_config(cfg.account_risk)
+    if risk_error:
+        print(f"ERROR: Invalid account-risk configuration — {risk_error}", file=sys.stderr)
+        return 1
+
+    from_dt = _parse_date(args.from_date)
+    to_dt   = _parse_date(args.to_date)
+    cache   = CandleCache(cfg.cache_dir)
+
+    m5 = cache.load(args.symbol, "M5", from_dt, to_dt)
+    if m5 is None:
+        adapter = MT5Adapter(cfg)
+        if not adapter.connect():
+            print("ERROR: Could not connect to MT5 and no cache found.", file=sys.stderr)
+            return 1
+        try:
+            m5 = fetch_m5(adapter, args.symbol, from_dt, to_dt)
+            cache.save(m5, args.symbol, "M5", from_dt, to_dt)
+        finally:
+            adapter.disconnect()
+
+    from .data.validation import validate_candles
+    val_m5 = validate_candles(m5, "M5")
+    if not val_m5.passed:
+        print_data_summary(m5, val_m5, None)
+        print("ERROR: M5 data quality check failed; backtest aborted.", file=sys.stderr)
+        return 1
+
+    from .backtest.engine import SymbolMeta, validate_symbol_meta
+    sym_meta: SymbolMeta | None = None
+    _manual = {k: getattr(args, k, None)
+               for k in ("point", "tick_value", "tick_size",
+                         "volume_min", "volume_max", "volume_step")}
+    if all(v is not None for v in _manual.values()):
+        sym_meta = SymbolMeta(**_manual)
+    else:
+        adapter3 = MT5Adapter(cfg)
+        try:
+            if adapter3.connect():
+                si = adapter3.get_symbol_info(args.symbol)
+                sym_meta = SymbolMeta(
+                    point=si["point"], tick_value=si["tick_value"],
+                    tick_size=si["tick_size"], volume_min=si["volume_min"],
+                    volume_max=si["volume_max"], volume_step=si["volume_step"],
+                )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Could not retrieve symbol metadata for %s", args.symbol)
+        finally:
+            adapter3.disconnect()
+
+    if sym_meta is None:
+        print(
+            f"ERROR: Could not retrieve symbol metadata for {args.symbol}. "
+            "Supply --point/--tick-value/--tick-size/--volume-min/--volume-max/"
+            "--volume-step to run without MT5.",
+            file=sys.stderr,
+        )
+        return 1
+
+    meta_error = validate_symbol_meta(sym_meta, args.symbol)
+    if meta_error:
+        print(f"ERROR: Invalid symbol metadata — {meta_error}", file=sys.stderr)
+        return 1
+
+    from .backtest.scalp_engine import run_scalp_backtest
+    result = run_scalp_backtest(
+        m5_candles=m5, config=cfg, symbol_meta=sym_meta,
+        sl_swing_bars=args.sl_swing_bars,
+        sl_buffer_points=args.sl_buffer_points,
+    )
+
+    print_backtest_report(result, args.symbol, args.from_date, args.to_date)
+
+    from .reporting.metrics import print_analytics_summary, print_risk_summary
+    print_risk_summary(result)
+
+    from .reporting.analytics import build_analytics_bundle
+    bundle = build_analytics_bundle(result, cfg)
+    print_analytics_summary(bundle)
+
+    from .reporting.exporter import export_backtest_report
+    from .data.candles import aggregate_m5_to_m15
+    agg = aggregate_m5_to_m15(m5)
+    try:
+        report_dir = export_backtest_report(
+            result=result,
+            symbol=args.symbol,
+            from_date=args.from_date,
+            to_date=args.to_date,
+            config=cfg,
+            symbol_meta=sym_meta,
+            incomplete_m15_windows=agg.incomplete_windows,
+            analytics_bundle=bundle,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to save backtest report")
+        print("ERROR: Backtest completed, but report export failed.", file=sys.stderr)
+        return 1
+
+    print(f"  Report saved      : {report_dir}")
+    return 0
+
+
 def main() -> None:
     from .reporting.console import ensure_printable_stdout
     ensure_printable_stdout()
@@ -378,12 +500,49 @@ def main() -> None:
                       choices=["STOP_NEW_ENTRIES", "CLOSE_ALL"],
                       help="Open-position policy when a protection triggers")
 
+    # backtest-scalp
+    p_sc = sub.add_parser("backtest-scalp", help="Run EMA-crossover scalping backtest (M5 only)")
+    p_sc.add_argument("--symbol",             default="XAUUSD")
+    p_sc.add_argument("--from",               dest="from_date", required=True)
+    p_sc.add_argument("--to",                 dest="to_date",   required=True)
+    p_sc.add_argument("--risk-pct",           type=float, default=1.0,
+                      help="Equity risk per trade (%%)")
+    p_sc.add_argument("--rr-target",          type=float, default=2.0,
+                      help="Reward-to-risk ratio (TP = RR × SL)")
+    p_sc.add_argument("--max-positions",      type=int,   default=2,
+                      help="Max concurrent open positions")
+    p_sc.add_argument("--max-daily-loss-pct", type=float, default=3.0)
+    p_sc.add_argument("--equity",             type=float, default=10_000.0)
+    p_sc.add_argument("--spread-points",      type=int,   default=21,
+                      help="Spread in broker points (21 = standard, 2 = RAW/ECN)")
+    p_sc.add_argument("--daily-target",       type=float, default=50.0,
+                      help="Stop taking new entries after this daily profit (USD)")
+    p_sc.add_argument("--daily-loss",         type=float, default=30.0,
+                      help="Stop taking new entries after this daily loss (USD)")
+    p_sc.add_argument("--sl-swing-bars",      type=int,   default=4,
+                      help="Bars to look back for local swing SL anchor")
+    p_sc.add_argument("--sl-buffer-points",   type=int,   default=15,
+                      help="Extra points beyond swing before placing SL")
+    p_sc.add_argument("--skip-sessions",      nargs="+",  default=["TOKYO", "OFF_SESSION"],
+                      metavar="SESSION",
+                      help="Block entries in these sessions (default: TOKYO OFF_SESSION)")
+    p_sc.add_argument("--swap-long",          type=float, default=0.0)
+    p_sc.add_argument("--swap-short",         type=float, default=0.0)
+    # Manual symbol metadata
+    p_sc.add_argument("--point",        type=float, default=None)
+    p_sc.add_argument("--tick-value",   type=float, default=None)
+    p_sc.add_argument("--tick-size",    type=float, default=None)
+    p_sc.add_argument("--volume-min",   type=float, default=None)
+    p_sc.add_argument("--volume-max",   type=float, default=None)
+    p_sc.add_argument("--volume-step",  type=float, default=None)
+
     args = parser.parse_args()
     dispatch = {
-        "inspect": cmd_inspect,
-        "fetch": cmd_fetch,
-        "zones": cmd_zones,
-        "backtest": cmd_backtest,
+        "inspect":        cmd_inspect,
+        "fetch":          cmd_fetch,
+        "zones":          cmd_zones,
+        "backtest":       cmd_backtest,
+        "backtest-scalp": cmd_backtest_scalp,
     }
     sys.exit(dispatch[args.command](args))
 
