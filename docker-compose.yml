@@ -139,7 +139,9 @@ services:
 
   strategy-ema-scalp:
     <<: *common
-    image: rohithuge/mt5-strategy-ema-scalp:latest  # built in Phase 2C
+    build:
+      context: .
+      dockerfile: services/strategy-ema-scalp/Dockerfile
     container_name: mt5-strategy-ema-scalp
     environment:
       STRATEGY_NAME: ema-scalp
@@ -162,7 +164,9 @@ services:
 
   strategy-liq-sweep:
     <<: *common
-    image: rohithuge/mt5-strategy-liq-sweep:latest  # built in Phase 2C
+    build:
+      context: .
+      dockerfile: services/strategy-liq-sweep/Dockerfile
     container_name: mt5-strategy-liq-sweep
     environment:
       STRATEGY_NAME: liq-sweep
