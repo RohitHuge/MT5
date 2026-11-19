@@ -241,6 +241,19 @@ def upsert_real_trade(trade: dict[str, Any]) -> None:
             )
 
 
+def get_open_real_trades() -> list[dict]:
+    """Return all real trades currently marked is_open=TRUE.
+
+    Used by the executor on startup to rebuild its in-memory ticket tracker
+    after a container restart — avoids losing track of positions opened before
+    the crash.
+    """
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM real_trades WHERE is_open = TRUE ORDER BY opened_at")
+            return [dict(r) for r in cur.fetchall()]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # daily_summary table
 # ─────────────────────────────────────────────────────────────────────────────

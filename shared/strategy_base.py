@@ -23,7 +23,7 @@ from typing import Deque
 import redis as redis_lib
 import requests
 
-from .channels import CANDLE_CHANNEL, HEARTBEAT, SIGNAL_LIVE, SIGNAL_SHADOW
+from .channels import CANDLE_CHANNEL, CANDLE_HISTORY_KEY, HEARTBEAT, SIGNAL_LIVE, SIGNAL_SHADOW
 from .models import Candle, Signal
 
 log = logging.getLogger(__name__)
@@ -167,6 +167,25 @@ class StrategyBase:
     # Main loop
     # -------------------------------------------------------------------------
 
+    def _seed_from_history(self) -> None:
+        """Pre-fill the rolling window from the Redis history list written by candle-feed.
+
+        candle-feed dual-writes every candle: RPUSH to the capped history list AND
+        PUBLISH to the live channel. Reading the list on startup fills the window
+        instantly so on_candle() has context from the first live candle received.
+        """
+        history_key = CANDLE_HISTORY_KEY.format(symbol=self.symbol, timeframe=self.timeframe)
+        try:
+            raw_list = self._redis.lrange(history_key, 0, -1)
+            for raw in raw_list:
+                try:
+                    self._candles.append(Candle.from_json(raw))
+                except Exception as exc:
+                    log.debug("Bad history candle: %s", exc)
+            log.info("Seeded %d candles from history list", len(self._candles))
+        except Exception as exc:
+            log.warning("Could not seed from history list: %s", exc)
+
     def run(self) -> None:
         logging.basicConfig(
             level=os.getenv("LOG_LEVEL", "INFO"),
@@ -175,6 +194,7 @@ class StrategyBase:
         log.info("Starting %s in %s mode (window=%d)", self.name, self.mode, self.window_size)
 
         self._fetch_symbol_info()
+        self._seed_from_history()
 
         self._running = True
         hb_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
@@ -183,7 +203,7 @@ class StrategyBase:
         channel = CANDLE_CHANNEL.format(symbol=self.symbol, timeframe=self.timeframe)
         pubsub = self._redis.pubsub(ignore_subscribe_messages=True)
         pubsub.subscribe(channel)
-        log.info("Subscribed to %s", channel)
+        log.info("Subscribed to %s (window pre-filled: %d candles)", channel, len(self._candles))
 
         try:
             for message in pubsub.listen():

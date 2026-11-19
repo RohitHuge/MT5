@@ -31,3 +31,8 @@ HEARTBEAT = "heartbeat:{service}"                  # e.g. heartbeat:candle-feed
 
 # Convenience: pattern for subscribing to ALL shadow signals at once
 SIGNAL_SHADOW_PATTERN = "signals:shadow:*"
+
+# Redis List written by candle-feed on every candle (capped at 500, oldest→newest).
+# Strategy containers read this on startup to pre-fill their rolling window without
+# waiting for live candles. Published by: candle-feed. Read by: strategy containers.
+CANDLE_HISTORY_KEY = "candles:{symbol}:{timeframe}:history"  # e.g. candles:XAUUSD:M5:history
