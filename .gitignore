@@ -1,0 +1,24 @@
+# Tool / IDE configs
+.commandcode/
+
+# MT5 connectivity POC output logs
+mt5-connectivity-poc/session_err.txt
+mt5-connectivity-poc/session_out.txt
+
+# Local env overrides
+.env
+.env.local
+docker-compose.override.yml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Docker
+*.log

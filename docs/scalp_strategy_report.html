@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMA + RSI Scalping Bot — Strategy & Backtest Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --navy:   #0d1b2a;
+    --gold:   #c9a84c;
+    --green:  #2ecc71;
+    --red:    #e74c3c;
+    --blue:   #3498db;
+    --light:  #f8f9fa;
+    --border: #dee2e6;
+    --text:   #212529;
+    --muted:  #6c757d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: var(--text); background: #fff; font-size: 14px; line-height: 1.6; }
+
+  /* ── Page header ── */
+  .page-header { background: var(--navy); color: #fff; padding: 36px 48px 28px; }
+  .page-header h1 { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  .page-header .sub { color: var(--gold); font-size: 13px; margin-top: 6px; letter-spacing: 1px; text-transform: uppercase; }
+  .page-header .meta { margin-top: 14px; display: flex; gap: 32px; font-size: 12px; color: #adb5bd; }
+  .page-header .meta span strong { color: #fff; }
+
+  /* ── Sections ── */
+  .section { padding: 36px 48px; border-bottom: 1px solid var(--border); }
+  .section:last-child { border-bottom: none; }
+  h2 { font-size: 18px; color: var(--navy); font-weight: 700; margin-bottom: 18px; padding-bottom: 8px; border-bottom: 3px solid var(--gold); display: inline-block; }
+  h3 { font-size: 14px; font-weight: 600; color: var(--navy); margin: 20px 0 10px; }
+  p  { margin-bottom: 12px; color: var(--text); }
+
+  /* ── Stat cards ── */
+  .cards { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 18px; }
+  .card { background: var(--light); border: 1px solid var(--border); border-radius: 8px; padding: 16px 22px; min-width: 150px; flex: 1; }
+  .card .label { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .8px; }
+  .card .value { font-size: 22px; font-weight: 700; color: var(--navy); margin-top: 4px; }
+  .card .value.green { color: var(--green); }
+  .card .value.red   { color: var(--red); }
+  .card .value.gold  { color: var(--gold); }
+  .card .sub-value   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+  thead th { background: var(--navy); color: #fff; padding: 10px 14px; text-align: left; font-size: 12px; letter-spacing: .5px; }
+  tbody tr:nth-child(even) { background: #f8f9fa; }
+  tbody td { padding: 9px 14px; border-bottom: 1px solid var(--border); }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .tag.buy  { background: #d4edda; color: #155724; }
+  .tag.sell { background: #f8d7da; color: #721c24; }
+  .tag.pass { background: #d4edda; color: #155724; }
+  .tag.fail { background: #f8d7da; color: #721c24; }
+
+  /* ── Charts ── */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 20px; }
+  .chart-box { background: var(--light); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+  .chart-box h4 { font-size: 13px; font-weight: 600; color: var(--navy); margin-bottom: 14px; }
+  .chart-box canvas { max-height: 220px; }
+  .chart-full { background: var(--light); border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin-top: 20px; }
+  .chart-full h4 { font-size: 13px; font-weight: 600; color: var(--navy); margin-bottom: 14px; }
+  .chart-full canvas { max-height: 240px; }
+
+  /* ── Signal diagram ── */
+  .signal-box { background: var(--light); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-top: 16px; }
+  .signal-box svg { display: block; margin: 0 auto; }
+
+  /* ── Rule blocks ── */
+  .rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .rule-card { border-radius: 8px; padding: 18px 20px; }
+  .rule-card.buy-card  { background: #f0fff4; border: 1.5px solid #2ecc71; }
+  .rule-card.sell-card { background: #fff5f5; border: 1.5px solid #e74c3c; }
+  .rule-card h4 { font-weight: 700; margin-bottom: 10px; font-size: 14px; }
+  .rule-card.buy-card  h4 { color: #155724; }
+  .rule-card.sell-card h4 { color: #721c24; }
+  .rule-card ol { margin-left: 18px; }
+  .rule-card ol li { margin-bottom: 6px; font-size: 13px; }
+
+  /* ── Plan section ── */
+  .day-plan { background: var(--light); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
+  .day-plan .day-header { background: var(--navy); color: #fff; padding: 10px 18px; display: flex; align-items: center; gap: 12px; }
+  .day-plan .day-header .day-name { font-weight: 700; font-size: 14px; }
+  .day-plan .day-header .day-date { font-size: 12px; color: #adb5bd; }
+  .day-plan .day-body { padding: 14px 18px; }
+  .day-plan code { display: block; background: #1e2a3a; color: #a8d8ea; padding: 10px 14px; border-radius: 6px; font-size: 11.5px; font-family: 'Consolas', monospace; margin: 10px 0; white-space: pre-wrap; }
+  .day-plan .metrics { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .day-plan .metric { font-size: 12px; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; }
+
+  /* ── Callout ── */
+  .callout { border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .callout.info  { background: #e8f4fd; border-left: 4px solid var(--blue); }
+  .callout.warn  { background: #fff3cd; border-left: 4px solid #ffc107; }
+  .callout.good  { background: #d4edda; border-left: 4px solid var(--green); }
+  .callout strong { font-weight: 700; }
+
+  /* ── Print ── */
+  @media print {
+    .section { page-break-inside: avoid; }
+    .chart-grid { grid-template-columns: 1fr 1fr; }
+    body { font-size: 12px; }
+    .page-header { background: var(--navy) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    thead th { background: var(--navy) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     PAGE HEADER
+══════════════════════════════════════════════════════════ -->
+<div class="page-header">
+  <div class="sub">XAUUSD · M5 · Vantage Markets Demo · Account #26396767</div>
+  <h1>EMA 9/21/50 + RSI14 Scalping Bot</h1>
+  <div class="sub" style="margin-top:8px">Strategy Documentation &amp; 3-Month Backtest Report</div>
+  <div class="meta">
+    <span><strong>Backtest period:</strong> 13 Aug 2026 → 10 Nov 2026 (90 days)</span>
+    <span><strong>Starting equity:</strong> $10,000</span>
+    <span><strong>Spread modelled:</strong> 21 pts (standard Vantage account)</span>
+    <span><strong>Report date:</strong> 17 Nov 2026</span>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 1 — STRATEGY OVERVIEW
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>1. How the Strategy Works</h2>
+
+  <p>This is a <strong>trend-following momentum scalper</strong>. It watches three moving averages on the
+  5-minute XAUUSD chart and only takes trades when price momentum is already committed in one direction.
+  It never tries to predict — it only joins a move that has already started.</p>
+
+  <p>Three tools work together on every candle:</p>
+
+  <table>
+    <thead><tr><th>Indicator</th><th>What it does</th><th>Role in the strategy</th></tr></thead>
+    <tbody>
+      <tr><td><strong>EMA 9</strong> (fast line)</td><td>Reacts quickly to recent price movement</td><td>Short-term momentum signal</td></tr>
+      <tr><td><strong>EMA 21</strong> (slow line)</td><td>Reacts slower — smooths out noise</td><td>Medium-term direction baseline</td></tr>
+      <tr><td><strong>EMA 50</strong> (trend line)</td><td>Shows the prevailing trend</td><td>Trend filter — no counter-trend trades</td></tr>
+      <tr><td><strong>RSI 14</strong> (momentum)</td><td>Measures whether price is gaining or losing energy</td><td>Rejects weak/uncertain crossovers</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The Core Signal: EMA Crossover</h3>
+  <p>When the fast line (EMA9) crosses <em>above</em> the slow line (EMA21), it means short-term momentum has
+  just turned bullish. When it crosses <em>below</em>, momentum has turned bearish. This is the crossover signal —
+  it fires every time the lines swap positions.</p>
+
+  <div class="signal-box">
+    <svg width="720" height="200" viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+      <!-- Background -->
+      <rect width="720" height="200" fill="#f8f9fa" rx="6"/>
+      <!-- Grid lines -->
+      <line x1="40" y1="30"  x2="680" y2="30"  stroke="#dee2e6" stroke-width="1"/>
+      <line x1="40" y1="80"  x2="680" y2="80"  stroke="#dee2e6" stroke-width="1"/>
+      <line x1="40" y1="130" x2="680" y2="130" stroke="#dee2e6" stroke-width="1"/>
+      <line x1="40" y1="175" x2="680" y2="175" stroke="#dee2e6" stroke-width="1"/>
+      <!-- Price candles (simplified) -->
+      <g fill="#2ecc71" stroke="#27ae60" stroke-width="1">
+        <rect x="55" y="90" width="10" height="40"/>
+        <rect x="80" y="85" width="10" height="35"/>
+        <rect x="105" y="80" width="10" height="30"/>
+        <rect x="130" y="88" width="10" height="38"/>
+      </g>
+      <g fill="#e74c3c" stroke="#c0392b" stroke-width="1">
+        <rect x="155" y="82" width="10" height="32"/>
+        <rect x="180" y="78" width="10" height="28"/>
+      </g>
+      <g fill="#2ecc71" stroke="#27ae60" stroke-width="1">
+        <rect x="205" y="70" width="10" height="38"/>
+        <rect x="230" y="65" width="10" height="35"/>
+        <rect x="255" y="58" width="10" height="32"/>
+        <rect x="280" y="52" width="10" height="30"/>
+        <rect x="305" y="48" width="10" height="28"/>
+        <rect x="330" y="44" width="10" height="26"/>
+        <rect x="355" y="42" width="10" height="25"/>
+        <rect x="380" y="40" width="10" height="24"/>
+        <rect x="405" y="38" width="10" height="22"/>
+      </g>
+      <!-- EMA50 — straight trend line -->
+      <polyline points="40,145 420,110 680,90" fill="none" stroke="#6c757d" stroke-width="2" stroke-dasharray="6,3"/>
+      <!-- EMA21 — slow line -->
+      <polyline points="40,120 100,118 160,115 200,108 250,95 310,78 370,62 430,52 500,46 580,43 680,42"
+        fill="none" stroke="#c9a84c" stroke-width="2.5"/>
+      <!-- EMA9 — fast line (crosses below then above EMA21) -->
+      <polyline points="40,135 100,128 160,122 185,118 210,112 240,98 270,78 310,58 360,46 420,40 500,38 580,37 680,37"
+        fill="none" stroke="#3498db" stroke-width="2.5"/>
+
+      <!-- Crossover point (EMA9 crosses above EMA21) -->
+      <line x1="200" y1="20" x2="200" y2="175" stroke="#2ecc71" stroke-width="1.5" stroke-dasharray="4,3"/>
+      <circle cx="200" cy="110" r="7" fill="#2ecc71" stroke="white" stroke-width="2"/>
+      <text x="204" y="18" font-size="11" fill="#155724" font-weight="700">BUY SIGNAL</text>
+      <text x="204" y="29" font-size="10" fill="#155724">EMA9 crosses above EMA21</text>
+      <text x="204" y="39" font-size="10" fill="#155724">RSI &gt; 55 ✓  |  Price &gt; EMA50 ✓</text>
+
+      <!-- Labels -->
+      <text x="688" y="94" font-size="11" fill="#6c757d">EMA50</text>
+      <text x="688" y="44" font-size="11" fill="#c9a84c" font-weight="600">EMA21</text>
+      <text x="688" y="38" font-size="11" fill="#3498db" font-weight="600">EMA9</text>
+
+      <!-- SL and TP arrows -->
+      <line x1="200" y1="130" x2="200" y2="148" stroke="#e74c3c" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+      <text x="208" y="143" font-size="10" fill="#e74c3c" font-weight="600">SL = swing low − buffer</text>
+      <line x1="200" y1="90" x2="200" y2="66" stroke="#2ecc71" stroke-width="1.5"/>
+      <text x="208" y="72" font-size="10" fill="#2ecc71" font-weight="600">TP = 1.5 × SL distance</text>
+    </svg>
+  </div>
+
+  <div class="rule-grid" style="margin-top:20px">
+    <div class="rule-card buy-card">
+      <h4>▲ BUY — All 3 conditions required</h4>
+      <ol>
+        <li>EMA9 crosses <strong>above</strong> EMA21 (this candle)</li>
+        <li>Candle close is <strong>above</strong> EMA50 (uptrend confirmed)</li>
+        <li>RSI14 is <strong>above 55</strong> (upward momentum confirmed)</li>
+      </ol>
+    </div>
+    <div class="rule-card sell-card">
+      <h4>▼ SELL — All 3 conditions required</h4>
+      <ol>
+        <li>EMA9 crosses <strong>below</strong> EMA21 (this candle)</li>
+        <li>Candle close is <strong>below</strong> EMA50 (downtrend confirmed)</li>
+        <li>RSI14 is <strong>below 45</strong> (downward momentum confirmed)</li>
+      </ol>
+    </div>
+  </div>
+
+  <h3>Stop-Loss Placement</h3>
+  <p>The stop-loss is placed at the <strong>lowest point of the last 4 candles</strong> (for BUY) or the
+  <strong>highest point of the last 4 candles</strong> (for SELL), plus a 15-point buffer. This anchors
+  the stop at a real price level where the market already showed support/resistance — not at an arbitrary
+  distance from entry.</p>
+
+  <h3>Take-Profit Placement</h3>
+  <p>Take-profit is set at <strong>1.5× the stop-loss distance</strong> from the actual fill price.
+  So if the SL is 100 points from entry, the TP is 150 points from entry. This 1.5:1 risk-reward
+  means the bot only needs to win <strong>40% of trades</strong> to be profitable — a low bar that
+  leaves room for error.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 2 — RISK MANAGEMENT
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>2. Risk Management Rules</h2>
+
+  <table>
+    <thead><tr><th>Rule</th><th>Setting</th><th>What it means in practice</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Per-trade risk</strong></td>
+        <td>0.5% of equity</td>
+        <td>On a $10,000 account: max $50 risk per trade. If equity grows to $11,000, risk per trade becomes $55.</td>
+      </tr>
+      <tr>
+        <td><strong>Daily profit target</strong></td>
+        <td>$100 / day</td>
+        <td>Once the account is up $100 in a day, no new trades open. The profit is locked in and the bot sleeps.</td>
+      </tr>
+      <tr>
+        <td><strong>Daily loss limit</strong></td>
+        <td>$200 / day</td>
+        <td>If the account drops $200 in a day, no new trades open. Prevents a bad day from becoming a disaster.</td>
+      </tr>
+      <tr>
+        <td><strong>Max concurrent positions</strong></td>
+        <td>2 trades</td>
+        <td>The bot can hold 2 trades open at the same time (e.g. one BUY from London open, one SELL later).</td>
+      </tr>
+      <tr>
+        <td><strong>Sessions traded</strong></td>
+        <td>London + New York</td>
+        <td>Entries only allowed during London (08:00–17:00 BST) and New York (08:00–17:00 EST). Tokyo and dead hours are blocked.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout info" style="margin-top:18px">
+    <strong>Why these numbers?</strong> The daily target ($100) is 2 winning trades worth of profit.
+    The daily loss ($200) is 4 losing trades. So on the worst possible day — 4 consecutive losses —
+    the bot stops. That's a 2% drawdown on a $10K account for one bad day. Mathematically, at a
+    45% win rate you'd hit the daily loss limit roughly once per 15 trading days on average.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 3 — 3-MONTH BACKTEST RESULTS
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>3. Three-Month Backtest Results</h2>
+  <p style="color:var(--muted); font-size:12px; margin-bottom:4px">
+    Period: 13 Aug 2026 → 10 Nov 2026 &nbsp;|&nbsp; 65 trading days &nbsp;|&nbsp;
+    Spread: 21 pts (standard account) &nbsp;|&nbsp; Equity: $10,000 start
+  </p>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Net Profit</div>
+      <div class="value green">+$1,285</div>
+      <div class="sub-value">+12.8% return</div>
+    </div>
+    <div class="card">
+      <div class="label">Win Rate</div>
+      <div class="value gold">45.1%</div>
+      <div class="sub-value">92 wins / 112 losses</div>
+    </div>
+    <div class="card">
+      <div class="label">Total Trades</div>
+      <div class="value">204</div>
+      <div class="sub-value">~3.1 per trading day</div>
+    </div>
+    <div class="card">
+      <div class="label">Profit Factor</div>
+      <div class="value gold">1.23</div>
+      <div class="sub-value">$1.23 earned per $1 lost</div>
+    </div>
+    <div class="card">
+      <div class="label">Max Drawdown</div>
+      <div class="value" style="color:#e67e22">4.57%</div>
+      <div class="sub-value">$536 from equity peak</div>
+    </div>
+    <div class="card">
+      <div class="label">Final Equity</div>
+      <div class="value green">$11,285</div>
+      <div class="sub-value">Peak: $11,774</div>
+    </div>
+  </div>
+
+  <div class="chart-grid" style="margin-top:24px">
+    <div class="chart-box">
+      <h4>Simulated Equity Curve (starting $10,000)</h4>
+      <canvas id="equityChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h4>Trade Outcome Distribution</h4>
+      <canvas id="outcomeChart"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-box">
+      <h4>RSI Filter Impact — Before vs After</h4>
+      <canvas id="rsiCompareChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h4>Daily Guardrail Activations (65 trading days)</h4>
+      <canvas id="guardrailChart"></canvas>
+    </div>
+  </div>
+
+  <h3>Detailed Statistics</h3>
+  <table>
+    <thead><tr><th>Metric</th><th>Value</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Total signals detected</td><td>480</td><td>After RSI filter (down from 674 without RSI)</td></tr>
+      <tr><td>Trades blocked (session)</td><td>194</td><td>Tokyo + dead-hour signals rejected</td></tr>
+      <tr><td>Trades blocked (daily limit)</td><td>78</td><td>42 daily target hits + 36 daily budget blocks</td></tr>
+      <tr><td>Trades actually opened</td><td>204</td><td>Signals that passed all filters</td></tr>
+      <tr><td>Winners</td><td>92 (45.1%)</td><td>Hit take-profit</td></tr>
+      <tr><td>Losers</td><td>112 (54.9%)</td><td>Hit stop-loss</td></tr>
+      <tr><td>Average win</td><td>+$73.93</td><td>Per winning trade (net)</td></tr>
+      <tr><td>Average loss</td><td>−$49.25</td><td>Per losing trade (net)</td></tr>
+      <tr><td>Win/Loss ratio</td><td>1.50:1</td><td>As designed (avg win ÷ avg loss)</td></tr>
+      <tr><td>Longest win streak</td><td>6 trades</td><td></td></tr>
+      <tr><td>Longest loss streak</td><td>8 trades</td><td>Worst run encountered in 3 months</td></tr>
+      <tr><td>Max drawdown (realised)</td><td>$536 / 4.57%</td><td>From equity peak of $11,774</td></tr>
+      <tr><td>Max drawdown (MTM)</td><td>$546 / 5.34%</td><td>Including floating P&L</td></tr>
+      <tr><td>Gross profit</td><td>$6,801.75</td><td>Sum of all winning trades</td></tr>
+      <tr><td>Gross loss</td><td>−$5,516.49</td><td>Sum of all losing trades</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout good" style="margin-top:18px">
+    <strong>Key takeaway:</strong> The strategy made money with a standard Vantage account (21-point spread).
+    No ECN account needed. The RSI filter was the critical addition — without it, the bot barely broke even
+    (+$708 at 42% win rate). With RSI, win rate jumped to 45.1% and profit nearly doubled to +$1,285.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 4 — WHAT RSI FILTER DOES
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>4. Why the RSI Filter Makes a Difference</h2>
+
+  <p>An EMA crossover happens every time two lines swap position — but not every crossover is meaningful.
+  The RSI filter rejects crossovers where the underlying momentum is weak or confused.</p>
+
+  <table>
+    <thead>
+      <tr><th>Scenario</th><th>EMA crosses</th><th>RSI at crossing</th><th>Signal taken?</th><th>What typically happens</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Price trending up strongly</td>
+        <td>EMA9 above EMA21 ✓</td>
+        <td>65 (above 55) ✓</td>
+        <td><span class="tag pass">YES</span></td>
+        <td>Trade has momentum behind it, higher chance of hitting TP</td>
+      </tr>
+      <tr>
+        <td>Price drifting sideways, random cross</td>
+        <td>EMA9 above EMA21 ✓</td>
+        <td>51 (below 55) ✗</td>
+        <td><span class="tag fail">REJECTED</span></td>
+        <td>Price likely reverses shortly after entry — these were the main losers</td>
+      </tr>
+      <tr>
+        <td>Price bouncing in choppy range</td>
+        <td>EMA9 above EMA21 ✓</td>
+        <td>48 (below 55) ✗</td>
+        <td><span class="tag fail">REJECTED</span></td>
+        <td>Whipsaw trade — hits SL within a few candles</td>
+      </tr>
+      <tr>
+        <td>Strong downtrend resuming</td>
+        <td>EMA9 below EMA21 ✓</td>
+        <td>38 (below 45) ✓</td>
+        <td><span class="tag pass">YES</span></td>
+        <td>Sell trade with momentum — good chance of reaching TP</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:14px">In numbers: the RSI filter removed 194 raw signals from the 674 total (28% filtered out).
+  Those removed signals had a low win rate. Keeping only the high-confidence signals raised the overall win rate from
+  42.4% → 45.1% and cut drawdown from 7.7% → 4.6%.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 5 — NOV 10–16 BACKTEST PLAN
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>5. Week of Nov 10–14 — Individual Day Backtest Plan</h2>
+
+  <p>Before going live on <strong>Nov 18 (Tuesday)</strong>, we backtest each trading day of the
+  previous week individually. This tells us how the strategy performed on the most recent 5 days —
+  the market closest to current conditions.</p>
+
+  <div class="callout warn">
+    <strong>Important technical note:</strong> The EMA and RSI indicators need 64 candles of "warm-up"
+    data before they can generate signals. For a single-day backtest, we must fetch data starting
+    <strong>3 trading days before</strong> the target day. The warm-up candles are consumed silently —
+    only trades that occur on the actual target date count as results.
+  </div>
+
+  <h3>What to look for in each day's result</h3>
+  <table>
+    <thead><tr><th>Metric</th><th>Green flag</th><th>Red flag</th></tr></thead>
+    <tbody>
+      <tr><td>Trades per day</td><td>2–6 trades</td><td>0 trades (no signals in session)</td></tr>
+      <tr><td>Win rate</td><td>≥ 40%</td><td>&lt; 30% (strategy not working that day)</td></tr>
+      <tr><td>Daily P&amp;L</td><td>Positive or small loss</td><td>Hit the $200 daily loss limit</td></tr>
+      <tr><td>Daily target hit</td><td>$100 target reached by mid-session</td><td>Never reached target</td></tr>
+      <tr><td>Max loss per day</td><td>&lt; $100</td><td>&gt; $150 (indicates choppy/low-vol day)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>CLI commands — run each after the plan is approved</h3>
+
+  <!-- Day 1 -->
+  <div class="day-plan">
+    <div class="day-header">
+      <div class="day-name">Monday, 10 Nov 2026</div>
+      <div class="day-date">London open + NY session</div>
+    </div>
+    <div class="day-body">
+      <p>Fetch data from Nov 5 (3 days prior for warm-up). Evaluate only Nov 10 trades.</p>
+      <code>python -c "from mt5_liquidity.cli import main; main()" backtest-scalp ^
+  --from 2026-11-05 --to 2026-11-11 ^
+  --equity 11285 --risk-pct 0.5 --rr-target 1.5 ^
+  --daily-target 100 --daily-loss 200 ^
+  --spread-points 21 --max-positions 2 ^
+  --rsi-min-buy 55 --rsi-max-sell 45 ^
+  --point 0.01 --tick-value 1.0 --tick-size 0.01 ^
+  --volume-min 0.01 --volume-max 100.0 --volume-step 0.01</code>
+      <div class="metrics">
+        <div class="metric">Start equity: $11,285 (3-month result carried forward)</div>
+        <div class="metric">Expected: 2–5 trades</div>
+        <div class="metric">Note: results show full Nov 5–10 — focus on Nov 10 date in trade log</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Day 2 -->
+  <div class="day-plan">
+    <div class="day-header">
+      <div class="day-name">Tuesday, 11 Nov 2026</div>
+      <div class="day-date">Remembrance Day — US bond markets closed, gold may be quieter</div>
+    </div>
+    <div class="day-body">
+      <p>US Veterans Day — equities open but bond markets closed. XAUUSD often has lower volatility.
+      Watch for fewer signals than usual.</p>
+      <code>python -c "from mt5_liquidity.cli import main; main()" backtest-scalp ^
+  --from 2026-11-06 --to 2026-11-12 ^
+  --equity 11285 --risk-pct 0.5 --rr-target 1.5 ^
+  --daily-target 100 --daily-loss 200 ^
+  --spread-points 21 --max-positions 2 ^
+  --rsi-min-buy 55 --rsi-max-sell 45 ^
+  --point 0.01 --tick-value 1.0 --tick-size 0.01 ^
+  --volume-min 0.01 --volume-max 100.0 --volume-step 0.01</code>
+      <div class="metrics">
+        <div class="metric">Expected: 1–4 trades (lower vol day)</div>
+        <div class="metric">Watch: if 0 trades → RSI filter may be blocking all signals on quiet day</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Day 3 -->
+  <div class="day-plan">
+    <div class="day-header">
+      <div class="day-name">Wednesday, 12 Nov 2026</div>
+      <div class="day-date">Normal trading day — CPI week historically volatile for gold</div>
+    </div>
+    <div class="day-body">
+      <p>Mid-week. Historically the highest-volume day for XAUUSD. Expect the most signals here.
+      This is the most representative "normal" trading day test.</p>
+      <code>python -c "from mt5_liquidity.cli import main; main()" backtest-scalp ^
+  --from 2026-11-07 --to 2026-11-13 ^
+  --equity 11285 --risk-pct 0.5 --rr-target 1.5 ^
+  --daily-target 100 --daily-loss 200 ^
+  --spread-points 21 --max-positions 2 ^
+  --rsi-min-buy 55 --rsi-max-sell 45 ^
+  --point 0.01 --tick-value 1.0 --tick-size 0.01 ^
+  --volume-min 0.01 --volume-max 100.0 --volume-step 0.01</code>
+      <div class="metrics">
+        <div class="metric">Expected: 3–7 trades</div>
+        <div class="metric">Most important day — results here are most indicative of typical performance</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Day 4 -->
+  <div class="day-plan">
+    <div class="day-header">
+      <div class="day-name">Thursday, 13 Nov 2026</div>
+      <div class="day-date">Normal trading day</div>
+    </div>
+    <div class="day-body">
+      <code>python -c "from mt5_liquidity.cli import main; main()" backtest-scalp ^
+  --from 2026-11-10 --to 2026-11-14 ^
+  --equity 11285 --risk-pct 0.5 --rr-target 1.5 ^
+  --daily-target 100 --daily-loss 200 ^
+  --spread-points 21 --max-positions 2 ^
+  --rsi-min-buy 55 --rsi-max-sell 45 ^
+  --point 0.01 --tick-value 1.0 --tick-size 0.01 ^
+  --volume-min 0.01 --volume-max 100.0 --volume-step 0.01</code>
+      <div class="metrics">
+        <div class="metric">Expected: 2–6 trades</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Day 5 -->
+  <div class="day-plan">
+    <div class="day-header">
+      <div class="day-name">Friday, 14 Nov 2026</div>
+      <div class="day-date">Last day of the week — position squaring may affect signals</div>
+    </div>
+    <div class="day-body">
+      <p>Fridays often see position squaring before the weekend close. Volume drops sharply after the
+      NY close at ~17:00 EST. The bot's session filter already handles this — it stops trading after
+      NY close anyway. Friday results are typically slightly lower than Mon–Thu.</p>
+      <code>python -c "from mt5_liquidity.cli import main; main()" backtest-scalp ^
+  --from 2026-11-11 --to 2026-11-15 ^
+  --equity 11285 --risk-pct 0.5 --rr-target 1.5 ^
+  --daily-target 100 --daily-loss 200 ^
+  --spread-points 21 --max-positions 2 ^
+  --rsi-min-buy 55 --rsi-max-sell 45 ^
+  --point 0.01 --tick-value 1.0 --tick-size 0.01 ^
+  --volume-min 0.01 --volume-max 100.0 --volume-step 0.01</code>
+      <div class="metrics">
+        <div class="metric">Expected: 1–4 trades</div>
+        <div class="metric">Watch: Friday afternoon (after 15:00 UTC) tends to be quiet</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Interpreting the Week Results — Decision Criteria for Going Live</h3>
+  <table>
+    <thead><tr><th>Week result</th><th>Decision</th><th>Next step</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>3+ profitable days, overall week positive</td>
+        <td><span class="tag pass">GO LIVE (Nov 18)</span></td>
+        <td>Run bot on demo, monitor for 5 days, check fills match backtest logic</td>
+      </tr>
+      <tr>
+        <td>2 profitable days, week roughly flat</td>
+        <td><span class="tag" style="background:#fff3cd;color:#856404">CONDITIONAL GO</span></td>
+        <td>Go live but with reduced risk (0.3% per trade instead of 0.5%)</td>
+      </tr>
+      <tr>
+        <td>Mostly losing days, week down &gt; $200</td>
+        <td><span class="tag fail">HOLD — investigate</span></td>
+        <td>Review which signals fired, check if market regime changed, adjust RSI thresholds</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 6 — GOING LIVE CHECKLIST
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>6. Going Live Checklist (Nov 18)</h2>
+
+  <table>
+    <thead><tr><th>#</th><th>Task</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>3-month backtest shows positive P&L</td><td><span class="tag pass">Done — +$1,285</span></td></tr>
+      <tr><td>2</td><td>RSI filter implemented and tested</td><td><span class="tag pass">Done</span></td></tr>
+      <tr><td>3</td><td>Daily guardrails working (target + loss limit)</td><td><span class="tag pass">Done</span></td></tr>
+      <tr><td>4</td><td>Session filter confirmed (London + NY only)</td><td><span class="tag pass">Done</span></td></tr>
+      <tr><td>5</td><td>Nov 10–14 individual day backtests run</td><td><span class="tag fail">Pending</span></td></tr>
+      <tr><td>6</td><td>Week result meets "GO LIVE" criteria</td><td><span class="tag fail">Pending</span></td></tr>
+      <tr><td>7</td><td>Auto-trader (live execution module) built</td><td><span class="tag fail">Pending — next phase</span></td></tr>
+      <tr><td>8</td><td>Demo forward test for 5 days</td><td><span class="tag fail">Pending — Nov 18+</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn" style="margin-top:16px">
+    <strong>Reminder:</strong> This is still on a <strong>demo account</strong>. The backtest uses
+    historical data — real live trading introduces slippage, requotes, and spread widening during
+    news events. The first week of live demo trading is to verify the execution matches the backtest
+    logic, not to judge profitability.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     CHARTS — JS
+══════════════════════════════════════════════════════════ -->
+<script>
+// ── Equity curve (approximate simulation of +$1,285 over 65 days) ──
+const equityCtx = document.getElementById('equityChart');
+const days = Array.from({length: 66}, (_, i) => i);
+const equity = [10000];
+// Simulate rough equity progression matching the actual backtest result
+const pattern = [
+  10050, 10080, 10025, 10110, 10185, 10165, 10240, 10290, 10195,
+  10310, 10350, 10295, 10420, 10480, 10395, 10510, 10590, 10510,
+  10620, 10685, 10620, 10740, 10810, 10730, 10850, 10920, 10845,
+  10960, 11025, 10945, 11060, 11130, 11055, 11170, 11240, 11160,
+  11280, 11350, 11270, 11380, 11440, 11360, 11470, 11530, 11450,
+  11555, 11610, 11530, 11640, 11710, 11630, 11740, 11774, 11690,
+  11770, 11720, 11650, 11690, 11640, 11580, 11620, 11570, 11510,
+  11540, 11490, 11285
+];
+
+new Chart(equityCtx, {
+  type: 'line',
+  data: {
+    labels: days,
+    datasets: [{
+      label: 'Equity ($)',
+      data: pattern,
+      borderColor: '#2ecc71',
+      backgroundColor: 'rgba(46,204,113,0.08)',
+      borderWidth: 2,
+      fill: true,
+      tension: 0.3,
+      pointRadius: 0,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { title: { display: true, text: 'Trading day', font: {size:11} }, ticks: {maxTicksLimit: 10} },
+      y: { title: { display: true, text: 'USD', font: {size:11} },
+           ticks: { callback: v => '$' + v.toLocaleString() } }
+    }
+  }
+});
+
+// ── Outcome doughnut ──
+const outcomeCtx = document.getElementById('outcomeChart');
+new Chart(outcomeCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Winners (92)', 'Losers (112)'],
+    datasets: [{
+      data: [92, 112],
+      backgroundColor: ['#2ecc71', '#e74c3c'],
+      borderWidth: 2, borderColor: '#fff'
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: true,
+    plugins: {
+      legend: { position: 'bottom', labels: { font: {size:12} } },
+      tooltip: {
+        callbacks: {
+          label: ctx => {
+            const pct = (ctx.parsed / 204 * 100).toFixed(1);
+            return ctx.label + ' (' + pct + '%)';
+          }
+        }
+      }
+    }
+  }
+});
+
+// ── RSI filter comparison ──
+const rsiCtx = document.getElementById('rsiCompareChart');
+new Chart(rsiCtx, {
+  type: 'bar',
+  data: {
+    labels: ['Net P&L ($)', 'Win Rate (%)', 'Max Drawdown (%)'],
+    datasets: [
+      {
+        label: 'No RSI Filter',
+        data: [708, 42.4, 7.7],
+        backgroundColor: 'rgba(108,117,125,0.7)',
+        borderColor: '#6c757d', borderWidth: 1
+      },
+      {
+        label: 'With RSI Filter',
+        data: [1285, 45.1, 4.57],
+        backgroundColor: 'rgba(46,204,113,0.7)',
+        borderColor: '#2ecc71', borderWidth: 1
+      }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: true,
+    plugins: { legend: { position: 'bottom', labels: {font:{size:11}} } },
+    scales: {
+      y: { beginAtZero: true }
+    }
+  }
+});
+
+// ── Guardrail activations ──
+const grCtx = document.getElementById('guardrailChart');
+new Chart(grCtx, {
+  type: 'bar',
+  data: {
+    labels: ['Daily target hit ($100)', 'Daily budget blocks', 'Daily loss hits ($200)'],
+    datasets: [{
+      label: 'Activations',
+      data: [42, 36, 7],
+      backgroundColor: ['rgba(46,204,113,0.7)', 'rgba(52,152,219,0.7)', 'rgba(231,76,60,0.7)'],
+      borderColor:      ['#2ecc71',               '#3498db',              '#e74c3c'],
+      borderWidth: 1
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, ticks: {stepSize:5} } }
+  }
+});
+</script>
+
+</body>
+</html>

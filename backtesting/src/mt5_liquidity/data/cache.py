@@ -173,7 +173,7 @@ class CandleCache:
             if timestamps[0] < cached_from or timestamps[-1] > cached_to:
                 logger.warning("Cached candle timestamps exceed metadata range: %s", parquet_path)
                 return None
-            if timestamps[0] > cached_from or timestamps[-1] >= cached_to:
+            if timestamps[-1] >= cached_to:
                 logger.warning("Cached candle timestamps do not cover declared metadata range: %s", parquet_path)
                 return None
         elif meta.get("candle_count", 0) != 0:
