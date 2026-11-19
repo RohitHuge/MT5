@@ -105,7 +105,9 @@ services:
 
   shadow-tracker:
     <<: *common
-    image: rohithuge/mt5-shadow-tracker:latest  # built in Phase 2B
+    build:
+      context: .
+      dockerfile: services/shadow-tracker/Dockerfile
     container_name: mt5-shadow-tracker
     environment:
       MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
