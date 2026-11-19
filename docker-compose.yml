@@ -75,26 +75,36 @@ services:
 
   candle-feed:
     <<: *common
-    image: rohithuge/mt5-candle-feed:latest   # built in Phase 2A
+    build:
+      context: .
+      dockerfile: services/candle-feed/Dockerfile
+    image: rohithuge/mt5-candle-feed:latest
     container_name: mt5-candle-feed
-    # build: ./services/candle-feed           # uncomment for local dev
     environment:
       MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
       REDIS_URL: ${REDIS_URL}
+      SYMBOL: ${SYMBOL:-XAUUSD}
+      TIMEFRAME: ${TIMEFRAME:-M5}
+      HISTORY_COUNT: ${HISTORY_COUNT:-500}
       LOG_LEVEL: ${LOG_LEVEL}
     depends_on:
       redis:
         condition: service_healthy
-    profiles: ["platform"]   # only starts when --profile platform is passed
+    profiles: ["platform"]
 
   executor:
     <<: *common
-    image: rohithuge/mt5-executor:latest      # built in Phase 2A
+    build:
+      context: .
+      dockerfile: services/executor/Dockerfile
+    image: rohithuge/mt5-executor:latest
     container_name: mt5-executor
     environment:
       MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
       REDIS_URL: ${REDIS_URL}
       POSTGRES_URL: ${POSTGRES_URL}
+      SYMBOL: ${SYMBOL:-XAUUSD}
+      TIMEFRAME: ${TIMEFRAME:-M5}
       LOG_LEVEL: ${LOG_LEVEL}
     depends_on:
       redis:
