@@ -1,0 +1,213 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MT5 Multi-Strategy Trading Platform
+#
+# IMPORTANT: mt5-bridge is NOT here — it runs as a Windows Service on the host.
+# All containers reach it via host.docker.internal:8000.
+#
+# Start order:
+#   1. redis and postgres (infrastructure)
+#   2. candle-feed (needs bridge + redis)
+#   3. strategy-* containers (need candle-feed via redis)
+#   4. executor (needs strategy-ema-scalp + bridge)
+#   5. shadow-tracker (needs strategy-* + postgres)
+#   6. dashboard (needs postgres)
+#
+# Quick start:
+#   cp .env.example .env        # fill in POSTGRES_PASSWORD
+#   docker-compose up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  mt5-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+
+x-common: &common
+  networks: [mt5-net]
+  restart: unless-stopped
+  env_file: .env
+  extra_hosts:
+    - "host.docker.internal:host-gateway"   # reach Windows host from container
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Infrastructure
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  redis:
+    <<: *common
+    image: redis:7-alpine
+    container_name: mt5-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    <<: *common
+    image: postgres:16-alpine
+    container_name: mt5-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./shared/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Platform services  (built in Phase 2A / 2B)
+# Images are stubs until those phases are complete.
+# ─────────────────────────────────────────────────────────────────────────────
+
+  candle-feed:
+    <<: *common
+    image: rohithuge/mt5-candle-feed:latest   # built in Phase 2A
+    container_name: mt5-candle-feed
+    # build: ./services/candle-feed           # uncomment for local dev
+    environment:
+      MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
+      REDIS_URL: ${REDIS_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles: ["platform"]   # only starts when --profile platform is passed
+
+  executor:
+    <<: *common
+    image: rohithuge/mt5-executor:latest      # built in Phase 2A
+    container_name: mt5-executor
+    environment:
+      MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
+      REDIS_URL: ${REDIS_URL}
+      POSTGRES_URL: ${POSTGRES_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    profiles: ["platform"]
+
+  shadow-tracker:
+    <<: *common
+    image: rohithuge/mt5-shadow-tracker:latest  # built in Phase 2B
+    container_name: mt5-shadow-tracker
+    environment:
+      MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
+      REDIS_URL: ${REDIS_URL}
+      POSTGRES_URL: ${POSTGRES_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    profiles: ["platform"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Strategy containers  (built in Phase 2C / 3B)
+# Each strategy is an independent container. Add a new strategy by adding a
+# new service block here following the same pattern.
+# ─────────────────────────────────────────────────────────────────────────────
+
+  strategy-ema-scalp:
+    <<: *common
+    image: rohithuge/mt5-strategy-ema-scalp:latest  # built in Phase 2C
+    container_name: mt5-strategy-ema-scalp
+    environment:
+      STRATEGY_NAME: ema-scalp
+      MODE: ${EMA_SCALP_MODE:-live}
+      REDIS_URL: ${REDIS_URL}
+      MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
+      EMA_FAST: ${EMA_FAST:-9}
+      EMA_SLOW: ${EMA_SLOW:-21}
+      EMA_TREND: ${EMA_TREND:-50}
+      RSI_PERIOD: ${RSI_PERIOD:-14}
+      RSI_MIN_BUY: ${RSI_MIN_BUY:-55}
+      RSI_MAX_SELL: ${RSI_MAX_SELL:-45}
+      RISK_PCT: ${EMA_SCALP_RISK_PCT:-0.5}
+      RR_TARGET: ${EMA_SCALP_RR_TARGET:-1.5}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles: ["platform"]
+
+  strategy-liq-sweep:
+    <<: *common
+    image: rohithuge/mt5-strategy-liq-sweep:latest  # built in Phase 2C
+    container_name: mt5-strategy-liq-sweep
+    environment:
+      STRATEGY_NAME: liq-sweep
+      MODE: ${LIQ_SWEEP_MODE:-shadow}
+      REDIS_URL: ${REDIS_URL}
+      MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
+      PIVOT_LEFT: ${LIQ_SWEEP_PIVOT_LEFT:-5}
+      PIVOT_RIGHT: ${LIQ_SWEEP_PIVOT_RIGHT:-3}
+      ZONE_TOLERANCE: ${LIQ_SWEEP_ZONE_TOLERANCE:-10}
+      RISK_PCT: ${LIQ_SWEEP_RISK_PCT:-0.5}
+      RR_TARGET: ${LIQ_SWEEP_RR_TARGET:-2.0}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles: ["platform"]
+
+  strategy-ob-fvg:
+    <<: *common
+    image: rohithuge/mt5-strategy-ob-fvg:latest     # built in Phase 3B
+    container_name: mt5-strategy-ob-fvg
+    environment:
+      STRATEGY_NAME: ob-fvg
+      MODE: ${OB_FVG_MODE:-shadow}
+      REDIS_URL: ${REDIS_URL}
+      MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
+      MIN_IMPULSE_POINTS: ${OB_FVG_MIN_IMPULSE_POINTS:-50}
+      MIN_GAP_POINTS: ${OB_FVG_MIN_GAP_POINTS:-10}
+      OB_LOOKBACK: ${OB_FVG_LOOKBACK:-20}
+      RISK_PCT: ${OB_FVG_RISK_PCT:-0.5}
+      RR_TARGET: ${OB_FVG_RR_TARGET:-2.0}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles: ["platform"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dashboard  (built in Phase 3A)
+# ─────────────────────────────────────────────────────────────────────────────
+
+  dashboard:
+    <<: *common
+    image: rohithuge/mt5-dashboard:latest   # built in Phase 3A
+    container_name: mt5-dashboard
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    environment:
+      POSTGRES_URL: ${POSTGRES_URL}
+      REDIS_URL: ${REDIS_URL}
+      MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles: ["platform"]
