@@ -2,9 +2,10 @@
 
 **Agent:** A4  
 **Track:** Platform Services — Shadow Tracker  
+**Phase:** 2B  
 **Session:** 53d45df3-4bdd-4e28-a6ed-ab35159086ef (branch A2)  
 **Date:** 2026-11-19  
-**Phase:** 2B  
+**Git commits:** `24fc8c5` (service), `8a37cd9` (this report)  
 **Status:** COMPLETE
 
 ---
@@ -13,10 +14,29 @@
 
 Implement **Phase 2B** from `PLATFORM_PLAN.md` — the Shadow Tracker service.
 
-This service watches every shadow-mode strategy signal, records each one as a
-virtual trade in Postgres, and closes it when subsequent candles trigger the
-SL or TP. It is the data source that makes the dashboard comparison meaningful:
-all historical virtual P&L lives here.
+This is the bookkeeper for every shadow-mode strategy. It receives signals that
+would have been real trades, records them as virtual trades in Postgres, watches
+each candle to detect SL/TP hits, and aggregates daily P&L so the dashboard can
+compare all strategies on equal terms.
+
+---
+
+## Context From Prior Agents
+
+Before writing any code, read A1 and A3 reports.
+
+**From A1 (Phase 1A — MT5 Bridge):**
+- `/symbol/XAUUSD` returns `tick_value` and `point` — fetch on startup for PnL calc
+- `/ws/candles` does NOT buffer missed candles — rebuild from DB on restart instead
+
+**From A3 (Phase 2A — Candle Feed + Executor):**
+- Candle-feed dual-writes every candle: `RPUSH candles:XAUUSD:M5:history` (capped
+  list, 500 max) + `PUBLISH candles:XAUUSD:M5` (live broadcast)
+- Shadow-tracker subscribes to the **PubSub channel** `candles:XAUUSD:M5` for live
+  candles — the history list is primarily for strategy containers seeding their window
+- Build context must be repo root (not service dir) so `shared/` is accessible —
+  A3 established this pattern; A4 follows the same convention
+- Signal format: `Signal.from_json(raw)` from `shared/models.py`
 
 ---
 
@@ -24,9 +44,9 @@ all historical virtual P&L lives here.
 
 | Task | Description | Status |
 |---|---|---|
-| 2B.1 | Create shadow-tracker service (main.py, Dockerfile, requirements.txt) | Done |
+| 2B.1 | shadow-tracker service (main.py, Dockerfile, requirements.txt) | Done |
 | 2B.2 | Daily summary aggregation at UTC midnight | Done (inside main.py) |
-| — | Update docker-compose.yml with build directive | Done |
+| — | docker-compose.yml: replace stub with build directive | Done |
 
 ---
 
@@ -41,147 +61,179 @@ services/shadow-tracker/
 docker-compose.yml    — shadow-tracker stub replaced with build: directive
 ```
 
-**Git commit:** `24fc8c5`  
-`feat(platform): Phase 2B -- shadow-tracker service`
+---
+
+## How It Works
+
+```
+Strategy container (MODE=shadow)
+        │ PUBLISH signals:shadow:liq-sweep  <Signal JSON>
+        ▼
+  shadow-tracker  ←── psubscribe("signals:shadow:*")
+        │
+        ├── insert_virtual_trade() → DB row id
+        └── _open_trades[id] = {entry, sl, tp, lots, direction, ...}
+
+candle-feed
+        │ PUBLISH candles:XAUUSD:M5  <Candle JSON>
+        ▼
+  shadow-tracker  ←── subscribe("candles:XAUUSD:M5")
+        │
+        └── for each open trade:
+              BUY:  low  <= sl? → SL hit
+                    high >= tp? → TP hit
+              SELL: high >= sl? → SL hit
+                    low  <= tp? → TP hit
+              → close_virtual_trade() + remove from _open_trades
+
+UTC midnight (threading.Timer)
+        └── aggregate yesterday's virtual_trades → upsert daily_summary
+```
 
 ---
 
 ## Architecture Decisions
 
-### 1. In-memory dict keyed by DB id, not by (strategy, entry_price, direction)
+### 1. In-memory dict keyed by DB id (not by plan spec's tuple)
 
 The plan spec suggested keying by `(strategy, entry_price, direction)`. That key
-is not unique — two different signals from the same strategy at the same entry
-price in the same direction (e.g. two signals fired on consecutive candles) would
-collide and lose one trade.
+is not unique: two signals from the same strategy at the same price in the same
+direction would collide and silently drop one trade.
 
-**Solution:** Key by the integer DB `id` returned from `insert_virtual_trade()`.
-The DB auto-increments the id so it is always unique. On restart, `get_open_virtual_trades()`
-returns the same id values, so the dict is rebuilt identically.
+**Used DB `id`** (integer, auto-increment primary key). `insert_virtual_trade()`
+returns it. On restart, `get_open_virtual_trades()` returns the same `id` values
+so the dict rebuilds identically — restart-safe with no data loss.
 
-### 2. SL takes precedence when both SL and TP are hit in the same candle
+### 2. SL takes precedence when both SL and TP hit in the same candle
 
-If a candle's range is wide enough to touch both the stop-loss and take-profit
-prices, we cannot know from bar data alone which was hit first. The conservative
-convention (matching the existing backtester in `backtesting/`) is to assume
-the worst: SL hit, trade closed at a loss. `_check_hit()` checks SL before TP
-for this reason.
+Same rule as the existing backtester in `backtesting/`. If a candle's range
+spans both prices, we can't know order from OHLC alone. Conservative assumption:
+SL hit first (worst outcome). `_check_hit()` checks SL before TP.
 
-### 3. Build context is the repo root, not services/shadow-tracker/
+### 3. Build context = repo root (pattern established by A3)
 
-`shared/` lives at the repo root and must be `COPY`-ed into every service image.
-If the Dockerfile's build context were `services/shadow-tracker/`, Docker would
-not see `shared/` and the build would fail.
-
-**Solution in docker-compose.yml:**
+A3 noted this first. All services that `import shared.*` must set:
 ```yaml
 build:
   context: .
-  dockerfile: services/shadow-tracker/Dockerfile
+  dockerfile: services/<name>/Dockerfile
 ```
-
-The Dockerfile then copies:
+Shadow-tracker follows this same convention. The Dockerfile:
 ```dockerfile
 COPY services/shadow-tracker/requirements.txt .
 COPY shared/ ./shared/
 COPY services/shadow-tracker/main.py .
+ENV PYTHONPATH=/app
 ```
 
-**This same pattern must be used for every service that imports from `shared/`.**
-(candle-feed, executor, strategy containers, dashboard — all Phase 2+.)
+### 4. Fresh psycopg2 connection for the midnight aggregation
 
-### 4. Separate psycopg2 connection for the midnight aggregation query
+The daily summary runs in a `threading.Timer` callback — a one-shot query that
+fires once every 24 hours. Opening a fresh `psycopg2.connect()` here (rather than
+borrowing from `shared.db`'s `ThreadedConnectionPool`) avoids holding a pool
+connection idle all day and avoids pool exhaustion during peak hours.
 
-The daily aggregation runs in a `threading.Timer` thread at UTC midnight. Rather
-than reusing `shared/db`'s private connection pool (which is designed for the
-main thread's transactional operations), it opens a fresh `psycopg2.connect()` for
-the one-off GROUP BY aggregation query. This avoids holding a pool connection idle
-for 24 hours and avoids any cross-thread pool state issues.
+### 5. Midnight timer fires at 00:00:05 UTC
 
-### 5. Symbol metadata fetched with retry on startup
+5-second offset guarantees all strategy containers have finished publishing
+signals for the day before the aggregation reads the DB. Edge case avoided:
+strategy emits signal at 23:59:59, aggregation fires at 00:00:00 before the
+signal is persisted.
 
-`tick_value` and `point` are fetched from `mt5-bridge /symbol/XAUUSD` once on
-startup. The bridge may not be ready immediately (it starts after the container
-network comes up). The fetch retries 10 times with 5-second gaps — 50 seconds
-total — before falling back to safe defaults (`tick_value=1.0, point=0.01`).
-If the defaults are used, a warning is logged so the operator knows PnL figures
-may be wrong.
+### 6. Symbol metadata fetched with retry (10 × 5s)
 
-### 6. Midnight timer fires at 00:00:05 UTC (not 00:00:00)
-
-A 5-second offset after midnight ensures all strategies have finished publishing
-their last signals for the day before the aggregation runs. This prevents an edge
-case where a strategy emits a signal at 23:59:59 and the aggregation fires before
-the signal is processed.
+The MT5 bridge may not be ready the instant the container starts. Up to 50 seconds
+of retry before falling back to safe defaults (`tick_value=1.0, point=0.01`). If
+defaults are used a WARNING is logged — operator will see it and can restart.
 
 ### 7. Heartbeat includes open trade count
 
 ```json
-{"service": "shadow-tracker", "ts": "...", "open_trades": 3}
+{"service": "shadow-tracker", "ts": "2026-11-19T...", "open_trades": 3}
 ```
 
-The dashboard (Phase 3A) can display this count to show the tracker is alive and
-processing. It also makes it obvious if the service has stalled (count stays at 0
-for a full session when strategies are running).
+Published to `heartbeat:shadow-tracker` every 10 seconds. The count lets the
+dashboard (Phase 3A) show a live "X positions being tracked" indicator and makes
+it obvious if the service has stalled.
 
 ---
 
 ## Integration Points
 
-| Upstream producer | What this service consumes |
-|---|---|
-| Any strategy container (`MODE=shadow`) | `signals:shadow:{strategy}` — one message per signal |
-| `candle-feed` | `candles:XAUUSD:M5` — one message per closed candle |
-| `mt5-bridge` | `GET /symbol/XAUUSD` — once at startup for tick_value and point |
+**Consumes:**
 
-| Downstream consumer | What this service produces |
+| Source | Channel / Endpoint |
 |---|---|
-| `dashboard` (Phase 3A) | `virtual_trades` rows (via Postgres) |
-| `dashboard` (Phase 3A) | `daily_summary` rows with `is_shadow=TRUE` (via Postgres) |
+| Strategy containers (`MODE=shadow`) | `signals:shadow:*` (Redis psubscribe) |
+| candle-feed | `candles:XAUUSD:M5` (Redis subscribe) |
+| mt5-bridge | `GET /symbol/XAUUSD` — once on startup |
+
+**Produces:**
+
+| Consumer | What |
+|---|---|
+| dashboard (Phase 3A) | `virtual_trades` rows in Postgres |
+| dashboard (Phase 3A) | `daily_summary` rows (`is_shadow=TRUE`) in Postgres |
+| dashboard (Phase 3A) | `heartbeat:shadow-tracker` on Redis |
 
 ---
 
 ## What Phase 3A (Dashboard) Builder Needs to Know
 
-1. **`daily_summary` rows are written at UTC midnight for the previous day.**
-   On Day 1 there will be no rows yet — the dashboard must handle empty results
-   gracefully (show 0 trades, $0 P&L, no chart). Don't assume rows always exist.
+1. **`daily_summary` rows write at UTC midnight for the previous day.** Day 1 has
+   no rows — handle empty results gracefully everywhere (0 trades, $0 PnL, blank chart).
 
-2. **`virtual_trades` rows with `outcome='OPEN'` are still in-flight.**
-   If the dashboard queries trade history it should filter `outcome != 'OPEN'`
-   to show only completed trades, or show OPEN trades separately as "live positions".
+2. **`virtual_trades` with `outcome='OPEN'` are live positions** — filter
+   `outcome != 'OPEN'` for completed trade history. Show OPEN rows separately
+   as "shadow positions currently tracking".
 
-3. **`is_shadow=TRUE` distinguishes virtual trades from real ones.**
-   `daily_summary` has rows for both real (from executor) and virtual (from shadow-
-   tracker) trades, differentiated by `is_shadow`. The comparison view should
-   show both for the live strategy (real P&L vs what shadow would have recorded).
+3. **`is_shadow=TRUE` flags virtual trades** — `daily_summary` has rows for both
+   real (executor, `is_shadow=FALSE`) and virtual (shadow-tracker, `is_shadow=TRUE`).
+   The comparison view should show both for the live strategy so the user sees
+   "real P&L vs what shadow model would have made on the same days."
 
-4. **`db.get_comparison_summary(days)` already does the JOIN** — it returns
-   `strategy`, `display_name`, `mode`, `total_trades`, `total_net_pnl`,
-   `win_rate_pct`, `profitable_days`. No second query needed for the comparison table.
+4. **`db.get_comparison_summary(days)`** already JOINs `strategies` for
+   `display_name` and `mode` — no second query needed for the comparison table.
 
-5. **`db.swap_live_strategy(new_live)` is atomic** — when the user promotes a
-   shadow strategy to live in the UI, call only this function (not two separate
-   `set_strategy_mode` calls). It runs in a single transaction.
+5. **`db.swap_live_strategy(new_live)`** is the correct call when user promotes
+   a strategy in the UI. It's a single atomic transaction. Never call
+   `set_strategy_mode` twice — the unique index will reject it mid-swap.
 
-6. **The heartbeat channel is `heartbeat:shadow-tracker`** — the dashboard can
-   subscribe to it to show a "last seen" timestamp and open trade count in a
-   status bar.
+6. **`CANDLE_HISTORY_KEY`** (`candles:XAUUSD:M5:history`) — A3 noted this Redis
+   List constant needs adding to `shared/channels.py`. Shadow-tracker doesn't
+   use it (rebuilds from DB), but strategy containers (Phase 2C) and dashboard
+   do. Add it before Phase 2C/3A work begins.
 
 ---
 
 ## Problems Encountered
 
-### Problem 1 — Plan's suggested in-memory key is not unique
+### Problem 1 — Plan's in-memory key is not unique
 
-The plan spec said to key `_open_trades` by `(strategy, entry_price, direction)`.
-As described in Decision 1 above, this collides. Used DB `id` instead.
+Spec said key by `(strategy, entry_price, direction)`. Collides on duplicate
+signals. Fixed: key by DB `id` (see Decision 1).
 
-### Problem 2 — Build context for shared/ access
+### Problem 2 — Build context excludes shared/
 
-Standard `build: ./services/shadow-tracker` would exclude `shared/` from the
-Docker build context. Switched to `build: { context: ., dockerfile: ... }`.
-This affects every service that imports from `shared/` — documented in Decision 3.
+`build: ./services/shadow-tracker` leaves `shared/` outside the Docker context.
+Fixed: `build: { context: ., dockerfile: ... }` (see Decision 3, same as A3).
+
+### Problem 3 — Plan mode activated mid-implementation
+
+Plan mode was triggered after the directory was created, blocking all file writes.
+Exited immediately via `ExitPlanMode` and resumed.
+
+---
+
+## Pending Cleanup Items
+
+The following are non-blocking but should be done before production:
+
+| Item | File | Notes |
+|---|---|---|
+| Add `CANDLE_HISTORY_KEY` constant | `shared/channels.py` | Needed by Phase 2C builders (A3 noted this) |
+| Add `get_open_real_trades()` | `shared/db.py` | Executor queries this inline; cleaner as a shared function (A3 noted this) |
+| Remove `version: "3.9"` | `docker-compose.yml` | Triggers deprecation warning in Compose v5 (A2 noted this) |
 
 ---
 
@@ -189,10 +241,7 @@ This affects every service that imports from `shared/` — documented in Decisio
 
 None. Phase 2B is fully coded and committed.
 
-The `services/candle-feed/` and `services/executor/` directories are visible as
-untracked in `git status` — those are Phase 2A deliverables and not part of this
-agent's scope.
-
-The only runtime prerequisite before shadow-tracker can produce data is that at
-least one strategy container is running in `MODE=shadow` and publishing to
-`signals:shadow:*`. The service starts cleanly with zero open trades and waits.
+Phase 2C (strategy containers) can proceed in parallel with Phase 3A (dashboard).
+Both depend on Phase 2A (candle-feed) being running, not on Phase 2B specifically.
+Shadow-tracker will start producing data as soon as strategy containers emit their
+first shadow signals.
