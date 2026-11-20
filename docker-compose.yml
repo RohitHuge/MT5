@@ -75,8 +75,6 @@ services:
       dockerfile: services/mt5-bridge/Dockerfile
     image: rohithuge/mt5-bridge:latest
     container_name: mt5-bridge
-    ports:
-      - "8000:8000"
     environment:
       EA_URL: ${EA_URL}
       LOG_LEVEL: ${LOG_LEVEL}
