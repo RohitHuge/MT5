@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MT5 — Strategy Detail</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --live: #22c55e;
+      --shadow: #3b82f6;
+      --off: #64748b;
+      --pos: #22c55e;
+      --neg: #ef4444;
+      --accent: #6366f1;
+      --win-color: #22c55e;
+      --loss-color: #ef4444;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .header a.back {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header a.back:hover { color: var(--text); }
+    .header h1 { font-size: 18px; font-weight: 700; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .badge-live   { background: rgba(34,197,94,0.15);  color: var(--live);   border: 1px solid rgba(34,197,94,0.3); }
+    .badge-shadow { background: rgba(59,130,246,0.15); color: var(--shadow); border: 1px solid rgba(59,130,246,0.3); }
+    .badge-off    { background: rgba(100,116,139,0.1); color: var(--off);    border: 1px solid rgba(100,116,139,0.2); }
+
+    /* ── Stat tiles ── */
+    .stats-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .stat-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      min-width: 140px;
+      flex: 1;
+    }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .stat-value { font-size: 22px; font-weight: 700; }
+    .pnl-pos { color: var(--pos); }
+    .pnl-neg { color: var(--neg); }
+    .pnl-zero { color: var(--muted); }
+
+    /* ── Layout ── */
+    .container { padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+      margin-top: 28px;
+    }
+
+    /* ── Charts row ── */
+    .charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+    @media (max-width: 800px) { .charts-row { grid-template-columns: 1fr; } }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .chart-card canvas { max-height: 280px; }
+
+    /* ── Trade table ── */
+    .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: var(--surface); }
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.03); }
+    .outcome-tp   { color: var(--pos); font-weight: 600; }
+    .outcome-sl   { color: var(--neg); font-weight: 600; }
+    .outcome-open { color: var(--accent); font-weight: 600; }
+    .outcome-force { color: var(--muted); font-weight: 600; }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <a href="/" class="back">&#8592; Dashboard</a>
+  <h1 id="page-title">Loading…</h1>
+  <span id="mode-badge"></span>
+</div>
+
+<div class="container">
+
+  <!-- Summary tiles -->
+  <div class="section-title">30-Day Summary</div>
+  <div class="stats-row" id="stats-row">
+    <div class="stat-tile"><div class="stat-label">Total Trades</div><div class="stat-value" id="stat-trades">—</div></div>
+    <div class="stat-tile"><div class="stat-label">Win Rate</div><div class="stat-value" id="stat-winrate">—</div></div>
+    <div class="stat-tile"><div class="stat-label">Net P&amp;L</div><div class="stat-value" id="stat-pnl">—</div></div>
+    <div class="stat-tile"><div class="stat-label">Profit Factor</div><div class="stat-value" id="stat-pf">—</div></div>
+    <div class="stat-tile"><div class="stat-label">Winners</div><div class="stat-value pnl-pos" id="stat-winners">—</div></div>
+    <div class="stat-tile"><div class="stat-label">Losers</div><div class="stat-value pnl-neg" id="stat-losers">—</div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="section-title">Daily P&amp;L (last 30 days)</div>
+  <div class="charts-row">
+    <div class="chart-card">
+      <canvas id="daily-bar-chart"></canvas>
+    </div>
+    <div class="chart-card">
+      <canvas id="winloss-doughnut"></canvas>
+    </div>
+  </div>
+
+  <!-- Trade list -->
+  <div class="section-title">Recent Trades (last 50)</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Symbol</th>
+          <th>Direction</th>
+          <th>Lots</th>
+          <th>Entry</th>
+          <th>Close</th>
+          <th>SL</th>
+          <th>TP</th>
+          <th>Outcome</th>
+          <th>Net P&amp;L</th>
+          <th>Opened</th>
+          <th>Closed</th>
+        </tr>
+      </thead>
+      <tbody id="trade-tbody">
+        <tr><td colspan="12" style="color:var(--muted);text-align:center;padding:24px">
+          <span class="spinner"></span> Loading…
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+const STRATEGY_NAME = "{{ strategy_name }}";
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function fmtPnl(val, decimals = 2) {
+  if (val === null || val === undefined) return '—';
+  const v = parseFloat(val);
+  const sign = v > 0 ? '+' : '';
+  return `${sign}$${v.toFixed(decimals)}`;
+}
+
+function pnlClass(val) {
+  if (val === null || val === undefined) return 'pnl-zero';
+  return parseFloat(val) > 0 ? 'pnl-pos' : parseFloat(val) < 0 ? 'pnl-neg' : 'pnl-zero';
+}
+
+function modeBadge(mode) {
+  if (!mode) return '';
+  const cls = `badge badge-${mode}`;
+  return `<span class="${cls}">${mode.toUpperCase()}</span>`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+function outcomeClass(outcome) {
+  switch (outcome) {
+    case 'TP': return 'outcome-tp';
+    case 'SL': return 'outcome-sl';
+    case 'OPEN': return 'outcome-open';
+    case 'FORCE_CLOSE': return 'outcome-force';
+    default: return '';
+  }
+}
+
+async function apiFetch(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ── Page header / strategy meta ───────────────────────────────────────────────
+
+async function loadHeader() {
+  try {
+    const strategies = await apiFetch('/api/strategies');
+    const s = strategies.find(x => x.name === STRATEGY_NAME);
+    if (s) {
+      document.getElementById('page-title').textContent = s.display_name || s.name;
+      document.getElementById('mode-badge').innerHTML = modeBadge(s.mode);
+      document.title = `MT5 — ${s.display_name || s.name}`;
+    } else {
+      document.getElementById('page-title').textContent = STRATEGY_NAME;
+    }
+  } catch (err) {
+    document.getElementById('page-title').textContent = STRATEGY_NAME;
+  }
+}
+
+// ── Summary stats from performance rows ───────────────────────────────────────
+
+function computeSummary(rows) {
+  let totalTrades = 0, totalWinners = 0, totalLosers = 0, totalNetPnl = 0;
+  rows.forEach(r => {
+    totalTrades  += parseInt(r.trades || 0);
+    totalWinners += parseInt(r.winners || 0);
+    totalLosers  += parseInt(r.losers || 0);
+    totalNetPnl  += parseFloat(r.net_pnl || 0);
+  });
+  const winRate = totalTrades > 0 ? (totalWinners / totalTrades * 100) : 0;
+  const pf = totalLosers > 0 && totalWinners > 0 ? totalWinners / totalLosers : null;
+  return { totalTrades, totalWinners, totalLosers, totalNetPnl, winRate, pf };
+}
+
+// ── Performance data + charts ─────────────────────────────────────────────────
+
+let barChart = null, doughnutChart = null;
+
+async function loadPerformance() {
+  try {
+    const rows = await apiFetch(`/api/strategy/${STRATEGY_NAME}/performance?days=30`);
+
+    // Stats tiles
+    const s = computeSummary(rows);
+    document.getElementById('stat-trades').textContent = s.totalTrades || '—';
+    document.getElementById('stat-winrate').textContent = s.totalTrades ? `${s.winRate.toFixed(1)}%` : '—';
+
+    const pnlEl = document.getElementById('stat-pnl');
+    pnlEl.textContent = fmtPnl(s.totalNetPnl);
+    pnlEl.className = `stat-value ${pnlClass(s.totalNetPnl)}`;
+
+    document.getElementById('stat-pf').textContent = s.pf !== null ? s.pf.toFixed(2) : '—';
+    document.getElementById('stat-winners').textContent = s.totalWinners;
+    document.getElementById('stat-losers').textContent = s.totalLosers;
+
+    if (!rows.length) return;
+
+    // ── Daily bar chart ──
+    const labels = rows.map(r => r.date);
+    const pnlData = rows.map(r => parseFloat(r.net_pnl || 0));
+    const barColors = pnlData.map(v => v >= 0 ? 'rgba(34,197,94,0.75)' : 'rgba(239,68,68,0.75)');
+    const borderColors = pnlData.map(v => v >= 0 ? '#22c55e' : '#ef4444');
+
+    const ctxBar = document.getElementById('daily-bar-chart').getContext('2d');
+    if (barChart) barChart.destroy();
+    barChart = new Chart(ctxBar, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Daily Net P&L',
+          data: pnlData,
+          backgroundColor: barColors,
+          borderColor: borderColors,
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const v = ctx.parsed.y;
+                return ` ${v >= 0 ? '+' : ''}$${v.toFixed(2)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#64748b', maxTicksLimit: 10, font: { size: 11 } },
+            grid: { color: 'rgba(255,255,255,0.04)' }
+          },
+          y: {
+            ticks: { color: '#64748b', callback: v => `$${v.toFixed(0)}` },
+            grid: { color: 'rgba(255,255,255,0.04)' }
+          }
+        }
+      }
+    });
+
+    // ── Win/loss doughnut ──
+    const ctxD = document.getElementById('winloss-doughnut').getContext('2d');
+    if (doughnutChart) doughnutChart.destroy();
+
+    if (s.totalTrades === 0) {
+      ctxD.fillStyle = 'rgba(148,163,184,0.4)';
+      ctxD.textAlign = 'center';
+      ctxD.font = '13px system-ui';
+      ctxD.fillText('No trades yet', ctxD.canvas.width / 2, 120);
+      return;
+    }
+
+    doughnutChart = new Chart(ctxD, {
+      type: 'doughnut',
+      data: {
+        labels: ['Winners', 'Losers'],
+        datasets: [{
+          data: [s.totalWinners, s.totalLosers],
+          backgroundColor: ['rgba(34,197,94,0.8)', 'rgba(239,68,68,0.8)'],
+          borderColor: ['#22c55e', '#ef4444'],
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        cutout: '65%',
+        plugins: {
+          legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const pct = s.totalTrades > 0 ? (ctx.parsed / s.totalTrades * 100).toFixed(1) : 0;
+                return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
+              }
+            }
+          }
+        }
+      }
+    });
+
+  } catch (err) {
+    console.warn('Performance load failed:', err);
+  }
+}
+
+// ── Trade list (last 50 from virtual or real depending on strategy mode) ───────
+
+async function loadTradeList() {
+  const tbody = document.getElementById('trade-tbody');
+  try {
+    // Fetch strategies to know the mode, then pick the right table
+    const [strategies, positions] = await Promise.all([
+      apiFetch('/api/strategies'),
+      apiFetch('/api/live_positions'),
+    ]);
+    const strat = strategies.find(s => s.name === STRATEGY_NAME);
+    const isLive = strat && strat.mode === 'live';
+
+    // For the trade list we query performance rows and also check live positions
+    // We show all open virtual trades + reference the last 50 from perf data
+    // Since there is no dedicated "get last N trades" endpoint, we build the list
+    // from live positions and annotate with "OPEN" status.
+
+    // Show open trades for this strategy first
+    const openVirtual = (positions.shadow || []).filter(t => t.strategy === STRATEGY_NAME);
+    const openReal    = isLive ? (positions.real || []).filter(t => t.strategy === STRATEGY_NAME) : [];
+
+    if (!openVirtual.length && !openReal.length) {
+      tbody.innerHTML = `<tr><td colspan="12" style="color:var(--muted);text-align:center;padding:24px">
+        No open trades. Closed trade history comes from the daily_summary aggregates —
+        see the bar chart above.
+      </td></tr>`;
+      return;
+    }
+
+    const rows = [];
+
+    openReal.forEach(t => {
+      rows.push({
+        id: t.ticket,
+        symbol: t.symbol,
+        direction: t.direction,
+        lots: t.lots,
+        entry: t.open_price,
+        close: null,
+        sl: t.sl_price,
+        tp: t.tp_price,
+        outcome: 'OPEN',
+        net_pnl: t.unrealised_pnl,
+        opened_at: t.opened_at,
+        closed_at: null,
+        type: 'real',
+      });
+    });
+
+    openVirtual.forEach(t => {
+      rows.push({
+        id: t.id,
+        symbol: t.symbol,
+        direction: t.direction,
+        lots: t.lots,
+        entry: t.entry_price,
+        close: null,
+        sl: t.sl_price,
+        tp: t.tp_price,
+        outcome: 'OPEN',
+        net_pnl: null,
+        opened_at: t.opened_at,
+        closed_at: null,
+        type: 'virtual',
+      });
+    });
+
+    tbody.innerHTML = rows.map(r => {
+      const pnlCell = r.net_pnl !== null
+        ? `<span class="${pnlClass(r.net_pnl)}">${fmtPnl(r.net_pnl)}</span>`
+        : '—';
+      return `<tr>
+        <td style="color:var(--muted)">${r.id}</td>
+        <td>${r.symbol}</td>
+        <td style="font-weight:600;color:${r.direction==='BUY'?'var(--pos)':'var(--neg)'}">${r.direction}</td>
+        <td>${r.lots}</td>
+        <td>${r.entry?.toFixed(5) ?? '—'}</td>
+        <td>—</td>
+        <td>${r.sl?.toFixed(5) ?? '—'}</td>
+        <td>${r.tp?.toFixed(5) ?? '—'}</td>
+        <td><span class="${outcomeClass(r.outcome)}">${r.outcome}</span></td>
+        <td>${pnlCell}</td>
+        <td style="font-size:12px;color:var(--muted)">${fmtDate(r.opened_at)}</td>
+        <td style="font-size:12px;color:var(--muted)">—</td>
+      </tr>`;
+    }).join('');
+
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="12" style="color:var(--neg);text-align:center;padding:24px">
+      Error loading trades: ${err.message}
+    </td></tr>`;
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+Promise.all([loadHeader(), loadPerformance(), loadTradeList()]);
+</script>
+</body>
+</html>

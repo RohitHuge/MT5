@@ -212,7 +212,10 @@ services:
 
   dashboard:
     <<: *common
-    image: rohithuge/mt5-dashboard:latest   # built in Phase 3A
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    image: rohithuge/mt5-dashboard:latest
     container_name: mt5-dashboard
     ports:
       - "${DASHBOARD_PORT:-3000}:3000"
