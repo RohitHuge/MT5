@@ -1,0 +1,28 @@
+============================================================
+  EMA BIAS AUTO-TRADER  |  XAUUSD M1
+  EMA 3 / 8  |  Lot 0.01  |  SL 80pts  |  TP 60pts
+  Press Ctrl+C to stop cleanly
+============================================================
+  Account: DEMO  |  Server: VantageMarkets-Demo  |  Balance: $896.33
+
+  Started. Checking every 5s...
+
+[22:34:56] #001  Price: 3868.62  EMA3: 3867.87  EMA8: 3865.73  Bias: BULL  Pos: 1  P&L: $-0.25
+[22:35:01] #002  Price: 3868.45  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $-0.42
+[22:35:06] #003  Price: 3869.07  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $+0.20
+[22:35:11] #004  Price: 3868.59  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $-0.28
+[22:35:16] #005  Price: 3869.17  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $+0.30
+[22:35:21] #006  Price: 3869.11  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $+0.24
+[22:35:26] #007  Price: 3869.17  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $+0.30
+[22:35:31] #008  Price: 3869.15  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $+0.28
+[22:35:36] #009  Price: 3868.50  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $-0.37
+[22:35:41] #010  Price: 3868.39  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $-0.48
+[22:35:46] #011  Price: 3868.74  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $-0.13
+[22:35:51] #012  Price: 3868.71  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $-0.16
+[22:35:56] #013  Price: 3868.54  EMA3: 3868.30  EMA8: 3866.40  Bias: BULL  Pos: 1  P&L: $-0.33
+  [SL/TP hit] Cooldown 2 cycles before re-entry
+[22:36:01] #014  Price: 3868.01  EMA3: 3868.47  EMA8: 3866.90  Bias: BULL  Pos: 0  P&L: $+0.00  [cooldown 2]
+[22:36:06] #015  Price: 3868.17  EMA3: 3868.47  EMA8: 3866.90  Bias: BULL  Pos: 0  P&L: $+0.00  [cooldown 1]
+[22:36:11] #016  Price: 3867.88  EMA3: 3868.47  EMA8: 3866.90  Bias: BULL  Pos: 1  P&L: $-0.38
+[22:36:16] #017  Price: 3867.64  EMA3: 3868.47  EMA8: 3866.90  Bias: BULL  Pos: 1  P&L: $-0.62
+[22:36:21] #018  Price: 3867.65  EMA3: 3868.47  EMA8: 3866.90  Bias: BULL  Pos: 1  P&L: $-0.61
