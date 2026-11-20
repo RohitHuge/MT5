@@ -4,6 +4,9 @@
 //| TCP so mt5-bridge (FastAPI, Ubuntu Docker) can call it instead   |
 //| of the Windows-only MetaTrader5 Python package.                  |
 //|                                                                  |
+//| Uses ws2_32.dll directly for server socket (MQL5 built-in        |
+//| Socket* functions are client-only; no SocketListen/Accept).      |
+//|                                                                  |
 //| Endpoints:                                                       |
 //|   GET  /health                                                   |
 //|   GET  /account                                                  |
@@ -14,39 +17,95 @@
 //|   POST /close/{ticket}                                           |
 //|                                                                  |
 //| Deploy: copy to MQL5/Experts/, compile, attach to any chart.    |
+//| Requires: Tools > Options > Expert Advisors > Allow DLL imports  |
 //+------------------------------------------------------------------+
 #property copyright "MT5 Platform"
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Windows Sockets 2 — server socket via DLL import
+// ─────────────────────────────────────────────────────────────────────────────
+
+#import "ws2_32.dll"
+   int    socket(int af, int type, int protocol);
+   int    closesocket(int s);
+   int    bind(int s, uchar &addr[], int namelen);
+   int    listen(int s, int backlog);
+   int    accept(int s, uchar &addr[], int &addrlen);
+   int    recv(int s, uchar &buf[], int len, int flags);
+   int    send(int s, uchar &buf[], int len, int flags);
+   int    WSAStartup(ushort ver, uchar &data[]);
+   int    WSACleanup();
+   int    ioctlsocket(int s, uint cmd, uint &argp);
+   int    setsockopt(int s, int level, int optname, uchar &optval[], int optlen);
+   int    WSAGetLastError();
+#import
+
+#define AF_INET        2
+#define SOCK_STREAM    1
+#define IPPROTO_TCP    6
+#define SOL_SOCKET     0xFFFF
+#define SO_RCVTIMEO    0x1005
+#define FIONBIO        0x8004667E
+#define INVALID_SOCK   (-1)
+#define WSAEWOULDBLOCK 10035
+
 input int    Port         = 8002;   // TCP port to listen on
-input int    PollMs       = 100;    // OnTimer interval (ms)
+input int    PollMs       = 1000;   // OnTimer interval (ms)
 input int    Magic        = 234001; // Magic number for all orders
 input int    Deviation    = 50;     // Max price deviation (points)
 
 #define CRLF "\r\n"
-#define MAX_BODY 4096
+
+int _server = INVALID_SOCK;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Server socket handle
+// Lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
-
-int _server = INVALID_HANDLE;
 
 int OnInit()
 {
-   _server = SocketCreate();
-   if(_server == INVALID_HANDLE)
+   uchar wsaData[408];
+   if(WSAStartup(0x0202, wsaData) != 0)
    {
-      Print("MT5Bridge: SocketCreate failed");
+      Print("MT5Bridge: WSAStartup failed: ", WSAGetLastError());
       return INIT_FAILED;
    }
-   if(!SocketListen(_server, "0.0.0.0", Port, 10))
+
+   _server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+   if(_server == INVALID_SOCK)
    {
-      Print("MT5Bridge: SocketListen failed on port ", Port, " error=", GetLastError());
-      SocketClose(_server);
+      Print("MT5Bridge: socket() failed: ", WSAGetLastError());
       return INIT_FAILED;
    }
+
+   // Non-blocking server so OnTimer returns immediately when no connection
+   uint nb = 1;
+   ioctlsocket(_server, FIONBIO, nb);
+
+   // Build sockaddr_in (16 bytes): family=AF_INET, port=Port, addr=0.0.0.0
+   uchar addr[16];
+   ArrayInitialize(addr, 0);
+   addr[0] = 2; addr[1] = 0;                       // sin_family = AF_INET
+   addr[2] = (uchar)(Port >> 8);                    // sin_port hi byte
+   addr[3] = (uchar)(Port & 0xFF);                  // sin_port lo byte
+   // addr[4..7] = 0 → INADDR_ANY (all interfaces)
+
+   if(bind(_server, addr, 16) != 0)
+   {
+      Print("MT5Bridge: bind() failed: ", WSAGetLastError());
+      closesocket(_server);
+      return INIT_FAILED;
+   }
+
+   if(listen(_server, 10) != 0)
+   {
+      Print("MT5Bridge: listen() failed: ", WSAGetLastError());
+      closesocket(_server);
+      return INIT_FAILED;
+   }
+
    Print("MT5Bridge: listening on port ", Port);
    EventSetMillisecondTimer(PollMs);
    return INIT_SUCCEEDED;
@@ -55,8 +114,8 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
-   if(_server != INVALID_HANDLE)
-      SocketClose(_server);
+   if(_server != INVALID_SOCK) { closesocket(_server); _server = INVALID_SOCK; }
+   WSACleanup();
    Print("MT5Bridge: stopped");
 }
 
@@ -64,25 +123,26 @@ void OnTick() {}
 
 void OnTimer()
 {
-   int client = SocketAccept(_server);
-   if(client == INVALID_HANDLE)
-      return;
+   uchar addrBuf[16];
+   int   addrLen = 16;
+   int   client  = accept(_server, addrBuf, addrLen);
+   if(client == INVALID_SOCK) return; // WSAEWOULDBLOCK — no pending connection
+
+   // 2-second recv timeout on client socket
+   uchar tv[4] = {0xD0, 0x07, 0x00, 0x00}; // 2000ms in little-endian
+   setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, tv, 4);
 
    string raw = ReadRequest(client);
-   if(raw == "")
+   if(raw != "")
    {
-      SocketClose(client);
-      return;
+      string method, path, body;
+      ParseRequest(raw, method, path, body);
+      string response = RouteRequest(method, path, body);
+      uchar  buf[];
+      StringToCharArray(response, buf, 0, StringLen(response));
+      send(client, buf, ArraySize(buf), 0);
    }
-
-   string method, path, body;
-   ParseRequest(raw, method, path, body);
-
-   string response = RouteRequest(method, path, body);
-   uchar buf[];
-   StringToCharArray(response, buf, 0, StringLen(response));
-   SocketSend(client, buf, ArraySize(buf));
-   SocketClose(client);
+   closesocket(client);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,32 +152,20 @@ void OnTimer()
 string ReadRequest(int client)
 {
    string result = "";
-   uchar buf[1];
-   int   idle    = 0;
+   uchar  buf[4096];
 
-   while(idle < 300)  // ~300ms timeout
+   while(true)
    {
-      uint available = SocketIsReadable(client);
-      if(available > 0)
-      {
-         uint got = SocketRead(client, buf, 1, 10);
-         if(got == 1)
-         {
-            result += CharToString(buf[0]);
-            idle = 0;
-            // Stop once we have a complete HTTP request
-            if(IsRequestComplete(result))
-               break;
-            continue;
-         }
-      }
-      Sleep(1);
-      idle++;
+      ArrayInitialize(buf, 0);
+      int n = recv(client, buf, ArraySize(buf) - 1, 0);
+      if(n <= 0) break;
+      result += CharArrayToString(buf, 0, n);
+      if(IsRequestComplete(result)) break;
    }
    return result;
 }
 
-bool IsRequestComplete(const string &raw)
+bool IsRequestComplete(string raw)
 {
    // Headers end at double CRLF
    int headerEnd = StringFind(raw, CRLF + CRLF);
@@ -142,7 +190,7 @@ bool IsRequestComplete(const string &raw)
 // Request parsing
 // ─────────────────────────────────────────────────────────────────────────────
 
-void ParseRequest(const string &raw, string &method, string &path, string &body)
+void ParseRequest(string raw, string &method, string &path, string &body)
 {
    method = "";
    path   = "";
@@ -165,7 +213,7 @@ void ParseRequest(const string &raw, string &method, string &path, string &body)
 // Router
 // ─────────────────────────────────────────────────────────────────────────────
 
-string RouteRequest(const string &method, const string &path, const string &body)
+string RouteRequest(string method, string path, string body)
 {
    string pathOnly = path;
    string query    = "";
@@ -237,7 +285,7 @@ string HandleAccount()
    "}";
 }
 
-string HandleSymbol(const string &symbol)
+string HandleSymbol(string symbol)
 {
    if(!SymbolSelect(symbol, true))
       return "{\"error\":\"symbol not found\"}";
@@ -268,7 +316,7 @@ string HandleSymbol(const string &symbol)
    "}";
 }
 
-string HandleCandles(const string &query)
+string HandleCandles(string query)
 {
    string symbol    = QueryParam(query, "symbol");
    string tfStr     = QueryParam(query, "timeframe");
@@ -332,7 +380,7 @@ string HandlePositions()
       double tp    = PositionGetDouble(POSITION_TP);
       double prof  = PositionGetDouble(POSITION_PROFIT);
       double swap  = PositionGetDouble(POSITION_SWAP);
-      double comm  = PositionGetDouble(POSITION_COMMISSION);
+      double comm  = 0; // POSITION_COMMISSION removed in newer MT5 builds
       long   openT = PositionGetInteger(POSITION_TIME);
       string comm_s= PositionGetString(POSITION_COMMENT);
       long   magic = PositionGetInteger(POSITION_MAGIC);
@@ -492,7 +540,7 @@ string HandleClose(long ticket)
 // HTTP response builder
 // ─────────────────────────────────────────────────────────────────────────────
 
-string HttpResponse(int code, const string &body)
+string HttpResponse(int code, string body)
 {
    string status = code == 200 ? "200 OK" :
                    code == 404 ? "404 Not Found" : "400 Bad Request";
@@ -508,26 +556,25 @@ string HttpResponse(int code, const string &body)
 // JSON helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-string JStr(const string &key, const string &val)
+string JStr(string key, string val)
 {
    // Escape backslash and double-quote inside val
-   string v = val;
-   StringReplace(v, "\\", "\\\\");
-   StringReplace(v, "\"", "\\\"");
-   return "\"" + key + "\":\"" + v + "\"";
+   StringReplace(val, "\\", "\\\\");
+   StringReplace(val, "\"", "\\\"");
+   return "\"" + key + "\":\"" + val + "\"";
 }
 
-string JDbl(const string &key, double val, int prec)
+string JDbl(string key, double val, int prec)
 {
    return "\"" + key + "\":" + DoubleToString(val, prec);
 }
 
-string JInt(const string &key, long val)
+string JInt(string key, long val)
 {
    return "\"" + key + "\":" + IntegerToString(val);
 }
 
-string JBool(const string &key, bool val)
+string JBool(string key, bool val)
 {
    return "\"" + key + "\":" + (val ? "true" : "false");
 }
@@ -561,7 +608,7 @@ ENUM_TIMEFRAMES StrToTF(const string &s)
    return WRONG_VALUE;
 }
 
-string QueryParam(const string &query, const string &key)
+string QueryParam(string query, string key)
 {
    string search = key + "=";
    int pos = StringFind(query, search);
@@ -573,7 +620,7 @@ string QueryParam(const string &query, const string &key)
 }
 
 // Minimal JSON field extractor: finds "key":"value" or "key":number
-string JsonField(const string &json, const string &key)
+string JsonField(string json, string key)
 {
    string search = "\"" + key + "\"";
    int pos = StringFind(json, search);

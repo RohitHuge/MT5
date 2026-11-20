@@ -13,8 +13,7 @@
 #   6. shadow-tracker (needs strategy-* + postgres)
 #   7. dashboard (needs postgres)
 #
-# Quick start:
-#   cp .env.example .env        # fill in POSTGRES_PASSWORD + EA_URL
+# Quick start (via Coolify or manual):
 #   docker-compose up -d
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -30,7 +29,7 @@ x-common: &common
   restart: unless-stopped
   env_file: .env
   extra_hosts:
-    - "host.docker.internal:host-gateway"   # reach Windows host from container
+    - "host.docker.internal:host-gateway"   # reach host MT5 EA from container
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Infrastructure
@@ -42,8 +41,6 @@ services:
     <<: *common
     image: redis:7-alpine
     container_name: mt5-redis
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -58,8 +55,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./shared/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -85,7 +80,6 @@ services:
     environment:
       EA_URL: ${EA_URL}
       LOG_LEVEL: ${LOG_LEVEL}
-    profiles: ["platform"]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Platform services
@@ -110,7 +104,6 @@ services:
         condition: service_healthy
       mt5-bridge:
         condition: service_started
-    profiles: ["platform"]
 
   executor:
     <<: *common
@@ -133,7 +126,6 @@ services:
         condition: service_healthy
       mt5-bridge:
         condition: service_started
-    profiles: ["platform"]
 
   shadow-tracker:
     <<: *common
@@ -151,10 +143,9 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    profiles: ["platform"]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Strategy containers  (built in Phase 2C / 3B)
+# Strategy containers
 # Each strategy is an independent container. Add a new strategy by adding a
 # new service block here following the same pattern.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -181,7 +172,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    profiles: ["platform"]
 
   strategy-liq-sweep:
     <<: *common
@@ -202,7 +192,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    profiles: ["platform"]
 
   strategy-ob-fvg:
     <<: *common
@@ -223,10 +212,9 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    profiles: ["platform"]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Dashboard  (built in Phase 3A)
+# Dashboard
 # ─────────────────────────────────────────────────────────────────────────────
 
   dashboard:
@@ -248,4 +236,3 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    profiles: ["platform"]
