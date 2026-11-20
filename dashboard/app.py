@@ -40,7 +40,7 @@ import sys
 sys.path.insert(0, "/app")
 
 from shared import db
-from shared.channels import SIGNAL_LIVE, SIGNAL_SHADOW_PATTERN
+from shared.channels import SIGNAL_ALL
 
 load_dotenv()
 
@@ -479,21 +479,20 @@ def _run_pubsub_thread(queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, st
     messages onto *queue* using the asyncio event loop.
 
     Subscribes to:
-      - SIGNAL_LIVE  ("signals:live")
-      - SIGNAL_SHADOW_PATTERN  ("signals:shadow:*")  via psubscribe
+      - SIGNAL_ALL  ("signals:all")  — all strategies publish here since the
+        dual-live fix; executor and shadow-tracker both consume from this channel
 
     Runs until *stop_event* is set (triggered on WebSocket disconnect).
     """
     try:
         rc = redis_lib.from_url(REDIS_URL, decode_responses=True)
         pubsub = rc.pubsub()
-        pubsub.subscribe(SIGNAL_LIVE)
-        pubsub.psubscribe(SIGNAL_SHADOW_PATTERN)
+        pubsub.subscribe(SIGNAL_ALL)
 
         for message in pubsub.listen():
             if stop_event.is_set():
                 break
-            if message["type"] not in ("message", "pmessage"):
+            if message["type"] != "message":
                 continue
             data = message.get("data")
             if not data:
@@ -506,7 +505,6 @@ def _run_pubsub_thread(queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, st
     finally:
         try:
             pubsub.unsubscribe()
-            pubsub.punsubscribe()
             pubsub.close()
         except Exception:
             pass
