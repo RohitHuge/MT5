@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # shared/ is two levels up from this file; add repo root to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 from shared.models import Candle, Signal
 from shared.strategy_base import StrategyBase

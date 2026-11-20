@@ -22,11 +22,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # shared/ is two levels up from this file; repo root → sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 # backtesting_src is added to PYTHONPATH by the Dockerfile; also add it here
 # for local runs where PYTHONPATH may not be set.
-_bt_src = Path(__file__).resolve().parents[2] / "backtesting" / "src"
+_bt_src = Path(__file__).resolve().parents[0] / "backtesting_src"
 if _bt_src.exists() and str(_bt_src) not in sys.path:
     sys.path.insert(0, str(_bt_src))
 
