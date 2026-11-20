@@ -186,7 +186,9 @@ services:
 
   strategy-ob-fvg:
     <<: *common
-    image: rohithuge/mt5-strategy-ob-fvg:latest     # built in Phase 3B
+    build:
+      context: .
+      dockerfile: services/strategy-ob-fvg/Dockerfile
     container_name: mt5-strategy-ob-fvg
     environment:
       STRATEGY_NAME: ob-fvg
