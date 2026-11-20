@@ -1,19 +1,20 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # MT5 Multi-Strategy Trading Platform
 #
-# IMPORTANT: mt5-bridge is NOT here — it runs as a Windows Service on the host.
-# All containers reach it via host.docker.internal:8000.
+# mt5-bridge runs in Docker and talks to the MQL5 EA (MT5Bridge.mq5) running
+# inside the MT5 terminal on the host via EA_URL (default: host.docker.internal:8002).
 #
 # Start order:
 #   1. redis and postgres (infrastructure)
-#   2. candle-feed (needs bridge + redis)
-#   3. strategy-* containers (need candle-feed via redis)
-#   4. executor (needs strategy-ema-scalp + bridge)
-#   5. shadow-tracker (needs strategy-* + postgres)
-#   6. dashboard (needs postgres)
+#   2. mt5-bridge (needs EA running in MT5 terminal on host)
+#   3. candle-feed (needs bridge + redis)
+#   4. strategy-* containers (need candle-feed via redis)
+#   5. executor (needs strategy-ema-scalp + bridge)
+#   6. shadow-tracker (needs strategy-* + postgres)
+#   7. dashboard (needs postgres)
 #
 # Quick start:
-#   cp .env.example .env        # fill in POSTGRES_PASSWORD
+#   cp .env.example .env        # fill in POSTGRES_PASSWORD + EA_URL
 #   docker-compose up -d
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -69,8 +70,25 @@ services:
       retries: 5
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Platform services  (built in Phase 2A / 2B)
-# Images are stubs until those phases are complete.
+# MT5 Bridge — calls the MQL5 EA inside MT5 terminal via EA_URL
+# ─────────────────────────────────────────────────────────────────────────────
+
+  mt5-bridge:
+    <<: *common
+    build:
+      context: .
+      dockerfile: services/mt5-bridge/Dockerfile
+    image: rohithuge/mt5-bridge:latest
+    container_name: mt5-bridge
+    ports:
+      - "8000:8000"
+    environment:
+      EA_URL: ${EA_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+    profiles: ["platform"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Platform services
 # ─────────────────────────────────────────────────────────────────────────────
 
   candle-feed:
@@ -90,6 +108,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      mt5-bridge:
+        condition: service_started
     profiles: ["platform"]
 
   executor:
@@ -111,6 +131,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      mt5-bridge:
+        condition: service_started
     profiles: ["platform"]
 
   shadow-tracker:
