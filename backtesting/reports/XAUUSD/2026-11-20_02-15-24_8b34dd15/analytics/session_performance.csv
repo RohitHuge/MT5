@@ -1,0 +1,6 @@
+session,trade_count,winners,losers,breakeven,win_rate,gross_profit,gross_loss,net_pnl,total_commission,avg_net_pnl,avg_win,avg_loss,profit_factor,avg_mae_usd,avg_mfe_usd,worst_mae_usd,best_mfe_usd
+TOKYO,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+LONDON,3,1,2,0,0.3333,93.42,-93.27,0.15,0.0,0.05,93.42,-46.64,1.0016,-45.69,62.28,-72.8,102.78
+NEW_YORK,1,0,1,0,0.0,0,-42.54,-42.54,0.0,-42.54,0.0,-42.54,0.0,-43.62,13.44,-43.62,13.44
+LONDON_NY_OVERLAP,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+OFF_SESSION,0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
