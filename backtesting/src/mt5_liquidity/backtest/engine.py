@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 from ..config import BacktestConfig
 from ..data.candles import Candle
 from ..strategy.liquidity_sweep import run_liquidity_sweep_strategy
+from ..strategy.ob_fvg_pipeline import run_ob_fvg_strategy
 from ..strategy.setup import Setup, SetupState
 from .execution import FillResult, compute_fill_price, simulate_fill
 from .ledger import LedgerStats, TradeLedger
@@ -95,9 +96,15 @@ def run_backtest(
     tick_size = symbol_meta.tick_size
     value_per_point_per_lot = (tick_val / tick_size) * point
 
-    all_setups: list[Setup] = run_liquidity_sweep_strategy(
-        m15_candles=m15_candles, m5_candles=m5_candles, config=config, point=point,
-    )
+    strategy = getattr(config, "strategy", "liquidity-sweep")
+    if strategy == "ob-fvg":
+        all_setups: list[Setup] = run_ob_fvg_strategy(
+            m5_candles=m5_candles, config=config, point=point,
+        )
+    else:
+        all_setups = run_liquidity_sweep_strategy(
+            m15_candles=m15_candles, m5_candles=m5_candles, config=config, point=point,
+        )
     entry_setups = [s for s in all_setups if s.state == SetupState.ENTRY_READY]
     unique_setups: dict[str, Setup] = {}
     for setup in sorted(entry_setups, key=lambda s: (s.retest.rejection_candle_index, s.setup_id)):

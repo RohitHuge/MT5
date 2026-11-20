@@ -127,6 +127,13 @@ class BacktestConfig:
     # Phase 3: account-level risk manager (disabled by default; when disabled
     # the engine keeps its legacy inline daily-loss guard).
     account_risk: AccountRiskConfig = field(default_factory=AccountRiskConfig)
+    # Strategy selector: "liquidity-sweep" (default) or "ob-fvg".
+    strategy: str = "liquidity-sweep"
+    # OB+FVG strategy parameters.
+    ob_min_impulse_points: float = 50.0
+    ob_lookback: int = 20
+    fvg_min_gap_points: float = 10.0
+    ob_fvg_sl_buffer_points: float = 15.0
 
 
 def load_config(env_path: str | None = None) -> BacktestConfig:

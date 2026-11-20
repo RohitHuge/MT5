@@ -150,6 +150,11 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     cfg.swap_long_points = getattr(args, "swap_long", 0.0)
     cfg.swap_short_points = getattr(args, "swap_short", 0.0)
     cfg.skip_sessions = getattr(args, "skip_sessions", []) or []
+    cfg.strategy = getattr(args, "strategy", "liquidity-sweep")
+    cfg.ob_min_impulse_points = getattr(args, "ob_min_impulse_points", 50.0)
+    cfg.ob_lookback = getattr(args, "ob_lookback", 20)
+    cfg.fvg_min_gap_points = getattr(args, "fvg_min_gap_points", 10.0)
+    cfg.ob_fvg_sl_buffer_points = getattr(args, "ob_fvg_sl_buffer_points", 15.0)
 
     # Phase 3: optional account-risk manager activation via CLI. getattr
     # defaults keep cmd_backtest callable with hand-built argument namespaces
@@ -501,6 +506,23 @@ def main() -> None:
                       default="STOP_NEW_ENTRIES",
                       choices=["STOP_NEW_ENTRIES", "CLOSE_ALL"],
                       help="Open-position policy when a protection triggers")
+
+    # Strategy selector and OB+FVG parameters.
+    p_bt.add_argument("--strategy", default="liquidity-sweep",
+                      choices=["liquidity-sweep", "ob-fvg"],
+                      help="Backtest strategy: liquidity-sweep (default) or ob-fvg")
+    p_bt.add_argument("--ob-min-impulse", type=float, default=50.0,
+                      dest="ob_min_impulse_points",
+                      help="OB+FVG: minimum impulse size in points to form an order block (default 50.0)")
+    p_bt.add_argument("--ob-lookback", type=int, default=20,
+                      dest="ob_lookback",
+                      help="OB+FVG: number of bars to scan for new order blocks (default 20)")
+    p_bt.add_argument("--fvg-min-gap", type=float, default=10.0,
+                      dest="fvg_min_gap_points",
+                      help="OB+FVG: minimum FVG gap size in points (default 10.0)")
+    p_bt.add_argument("--ob-fvg-sl-buffer", type=float, default=15.0,
+                      dest="ob_fvg_sl_buffer_points",
+                      help="OB+FVG: stop-loss buffer in points beyond OB boundary (default 15.0)")
 
     # backtest-scalp
     p_sc = sub.add_parser("backtest-scalp", help="Run EMA-crossover scalping backtest (M5 only)")
