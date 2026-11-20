@@ -1,8 +1,10 @@
-"""Shadow Tracker — records virtual trades for all shadow-mode strategies.
+"""Shadow Tracker — records virtual trades for ALL strategies from signals:all.
 
 Responsibilities
-  1. Subscribe to Redis ``signals:shadow:*`` — persist every incoming shadow
-     signal as a row in ``virtual_trades`` and keep an in-memory copy.
+  1. Subscribe to Redis ``signals:all`` — persist every incoming signal from every
+     strategy as a row in ``virtual_trades`` and keep an in-memory copy.
+     This includes the live strategy's signals, which allows comparing real trade
+     performance against what the shadow model tracked for the same signals.
   2. Subscribe to ``candles:XAUUSD:M5`` — on every new candle check all open
      virtual trades for SL/TP hits and close them in both DB and memory.
   3. At UTC midnight — aggregate the previous day's closed virtual trades into
@@ -52,7 +54,7 @@ logging.basicConfig(
 log = logging.getLogger("shadow-tracker")
 
 # shared/ is on PYTHONPATH=/app (set in Dockerfile)
-from shared.channels import CANDLE_CHANNEL, HEARTBEAT, SIGNAL_SHADOW_PATTERN  # noqa: E402
+from shared.channels import CANDLE_CHANNEL, HEARTBEAT, SIGNAL_ALL  # noqa: E402
 from shared.models import Candle, Signal  # noqa: E402
 import shared.db as db  # noqa: E402
 
@@ -153,15 +155,15 @@ def _calc_pnl(
 # ---------------------------------------------------------------------------
 
 def _on_signal(channel: str, data: str) -> None:
-    """Persist an incoming shadow signal as a new OPEN virtual trade."""
+    """Persist an incoming signal from any strategy as a new OPEN virtual trade.
+
+    All strategies publish to signals:all — shadow-tracker records them all.
+    This includes the live strategy's signals, enabling real vs virtual comparison.
+    """
     try:
         sig = Signal.from_json(data)
     except Exception as exc:
         log.warning("Could not parse signal from %s: %s — raw: %.120s", channel, exc, data)
-        return
-
-    if sig.mode != "shadow":
-        log.debug("Ignoring non-shadow signal (mode=%s) on %s", sig.mode, channel)
         return
 
     try:
@@ -394,11 +396,11 @@ def main() -> None:
 
     # 5. Subscribe
     ps = r.pubsub(ignore_subscribe_messages=True)
-    ps.psubscribe(SIGNAL_SHADOW_PATTERN)   # signals:shadow:*
-    ps.subscribe(CANDLE_CH)                # candles:XAUUSD:M5
+    ps.subscribe(SIGNAL_ALL)   # all strategy signals, every strategy
+    ps.subscribe(CANDLE_CH)    # candles:XAUUSD:M5
     log.info(
-        "Subscribed to pattern '%s' and channel '%s'",
-        SIGNAL_SHADOW_PATTERN, CANDLE_CH,
+        "Subscribed to '%s' and '%s'",
+        SIGNAL_ALL, CANDLE_CH,
     )
 
     # 6. Message loop
@@ -411,8 +413,8 @@ def main() -> None:
         channel  = msg.get("channel", "")
         data     = msg.get("data", "")
 
-        if msg_type == "pmessage":
-            # Incoming shadow signal from a strategy container
+        if msg_type == "message" and channel == SIGNAL_ALL:
+            # Incoming signal from any strategy container — record as virtual trade
             _on_signal(channel, data)
 
         elif msg_type == "message" and channel == CANDLE_CH:

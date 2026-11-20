@@ -1,13 +1,18 @@
-"""executor — receives live trade signals and places real MT5 orders.
+"""executor — receives trade signals from signals:all and places real MT5 orders.
 
 Responsibilities:
-  1. Subscribe to Redis ``signals:live`` — place real orders via mt5-bridge POST /order
+  1. Subscribe to Redis ``signals:all`` — for each signal, query the DB to find
+     which strategy currently has mode='live'; only place a real order if
+     signal.strategy matches the live strategy name.
   2. Subscribe to Redis ``candles:XAUUSD:M5`` — sync open positions on each candle
   3. Write all trade events to Postgres via shared/db.py
   4. Publish heartbeat every 10 seconds
 
 Signal flow:
-  strategy-container (MODE=live) → signals:live → executor → POST /order → MT5
+  strategy-container → signals:all → executor
+    → db.get_all_strategies() → find live strategy
+    → if signal.strategy == live_strategy: POST /order → MT5
+    → else: DEBUG log and skip
 
 Position sync flow (every closed candle):
   executor → GET /positions → compare with _tracked_tickets
@@ -39,8 +44,8 @@ import requests
 from dotenv import load_dotenv
 
 sys.path.insert(0, "/app")
-from shared.channels import CANDLE_CHANNEL, HEARTBEAT, SIGNAL_LIVE
-from shared.db import upsert_real_trade
+from shared.channels import CANDLE_CHANNEL, HEARTBEAT, SIGNAL_ALL
+from shared.db import get_all_strategies, upsert_real_trade
 from shared.models import Signal
 
 load_dotenv()
@@ -87,8 +92,26 @@ def _bridge_post(path: str, body: dict, timeout: int = 10) -> Any:
 
 # ── Signal handler ────────────────────────────────────────────────────────────
 
+def _get_live_strategy_name() -> str | None:
+    """Query the DB and return the name of the currently live strategy, or None.
+
+    Returns None if no strategy has mode='live' (safe default: execute nothing).
+    DB errors are logged and treated as None so the platform does not place orders
+    blindly when the DB is unreachable.
+    """
+    try:
+        strategies = get_all_strategies()
+    except Exception as exc:
+        log.error("DB query for live strategy failed: %s — skipping signal", exc)
+        return None
+    for s in strategies:
+        if s.get("mode") == "live":
+            return s["name"]
+    return None
+
+
 def handle_signal(raw: str) -> None:
-    """Parse a Signal from Redis, place the order, record in DB."""
+    """Parse a Signal from signals:all, gate on DB live strategy, place order."""
     try:
         sig = Signal.from_json(raw)
     except Exception as exc:
@@ -103,9 +126,25 @@ def handle_signal(raw: str) -> None:
         log.error("Signal has invalid lot/sl/tp values — skipping: %s", raw[:200])
         return
 
+    # DB gate — only execute the signal if this strategy is currently live
+    live_strategy = _get_live_strategy_name()
+    if live_strategy is None:
+        log.debug(
+            "No live strategy in DB — skipping signal from %s (%s %s)",
+            sig.strategy, sig.direction, sig.symbol,
+        )
+        return
+    if sig.strategy != live_strategy:
+        log.debug(
+            "Signal from %s skipped — live strategy is %s",
+            sig.strategy, live_strategy,
+        )
+        return
+
     log.info(
-        "Signal received: %s %s %s lots=%.2f sl=%.5f tp=%.5f | strategy=%s",
-        sig.direction, sig.symbol, sig.lots, sig.sl_price, sig.tp_price, sig.strategy,
+        "Signal accepted (live=%s): %s %s %s lots=%.2f sl=%.5f tp=%.5f",
+        live_strategy, sig.direction, sig.symbol, sig.lots,
+        sig.sl_price, sig.tp_price,
     )
 
     # Place order via bridge
@@ -322,8 +361,8 @@ def main() -> None:
 
     # Subscribe to both signal and candle channels
     pubsub = r.pubsub(ignore_subscribe_messages=True)
-    pubsub.subscribe(SIGNAL_LIVE, CANDLE_SUB_CHANNEL)
-    log.info("Subscribed to: %s, %s", SIGNAL_LIVE, CANDLE_SUB_CHANNEL)
+    pubsub.subscribe(SIGNAL_ALL, CANDLE_SUB_CHANNEL)
+    log.info("Subscribed to: %s, %s", SIGNAL_ALL, CANDLE_SUB_CHANNEL)
 
     for message in pubsub.listen():
         channel = message.get("channel", "")
@@ -333,7 +372,7 @@ def main() -> None:
             continue
 
         try:
-            if channel == SIGNAL_LIVE:
+            if channel == SIGNAL_ALL:
                 handle_signal(data)
 
             elif channel == CANDLE_SUB_CHANNEL:

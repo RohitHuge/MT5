@@ -1,11 +1,14 @@
 """Base class for all strategy containers.
 
 Each strategy container subclasses StrategyBase and overrides on_candle().
-The base class handles all Redis wiring, signal routing, and heartbeats so
+The base class handles all Redis wiring, signal publishing, and heartbeats so
 the subclass only contains signal detection logic.
 
+All strategies publish every signal to ``signals:all`` regardless of their
+database mode. The executor queries the DB on each signal to decide whether to
+place a real order; the shadow-tracker records every signal as a virtual trade.
+
 Environment variables read at construction:
-  MODE          — "live" | "shadow" | "off"  (default: "shadow")
   REDIS_URL     — e.g. redis://redis:6379
   MT5_BRIDGE_URL — e.g. http://host.docker.internal:8000
 """
@@ -23,7 +26,7 @@ from typing import Deque
 import redis as redis_lib
 import requests
 
-from .channels import CANDLE_CHANNEL, CANDLE_HISTORY_KEY, HEARTBEAT, SIGNAL_LIVE, SIGNAL_SHADOW
+from .channels import CANDLE_CHANNEL, CANDLE_HISTORY_KEY, HEARTBEAT, SIGNAL_ALL
 from .models import Candle, Signal
 
 log = logging.getLogger(__name__)
@@ -44,7 +47,6 @@ class StrategyBase:
         self.timeframe = timeframe
         self.window_size = window_size
 
-        self.mode = os.getenv("MODE", "shadow").lower()
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         self.mt5_bridge_url = os.getenv("MT5_BRIDGE_URL", "http://localhost:8000").rstrip("/")
 
@@ -66,8 +68,9 @@ class StrategyBase:
     def on_candle(self, candles: list[Candle]) -> Signal | None:
         """Called with the current rolling window on every new candle.
 
-        Return a Signal to trade, or None to pass. The base class handles
-        routing (live → signals:live, shadow → signals:shadow:{name}).
+        Return a Signal to trade, or None to pass. The base class publishes
+        every returned Signal to ``signals:all``; downstream consumers (executor,
+        shadow-tracker) decide what to do with it.
         """
         raise NotImplementedError
 
@@ -131,18 +134,18 @@ class StrategyBase:
     # -------------------------------------------------------------------------
 
     def _publish_signal(self, signal: Signal) -> None:
-        if self.mode == "live":
-            self._redis.publish(SIGNAL_LIVE, signal.to_json())
-            log.info("LIVE signal: %s %s entry=%.2f sl=%.2f tp=%.2f lots=%.2f",
-                     signal.direction, signal.symbol,
-                     signal.entry_price, signal.sl_price, signal.tp_price, signal.lots)
-        elif self.mode == "shadow":
-            ch = SIGNAL_SHADOW.format(strategy=self.name)
-            self._redis.publish(ch, signal.to_json())
-            log.info("SHADOW signal: %s %s entry=%.2f sl=%.2f tp=%.2f lots=%.2f",
-                     signal.direction, signal.symbol,
-                     signal.entry_price, signal.sl_price, signal.tp_price, signal.lots)
-        # mode == "off": do nothing
+        """Publish signal to the unified signals:all bus.
+
+        Routing is entirely downstream: the executor checks the DB to decide
+        whether to place a real order; the shadow-tracker records every signal
+        as a virtual trade regardless of strategy mode.
+        """
+        self._redis.publish(SIGNAL_ALL, signal.to_json())
+        log.info(
+            "Signal published → %s | strategy=%s %s %s entry=%.2f sl=%.2f tp=%.2f lots=%.2f",
+            SIGNAL_ALL, signal.strategy, signal.direction, signal.symbol,
+            signal.entry_price, signal.sl_price, signal.tp_price, signal.lots,
+        )
 
     # -------------------------------------------------------------------------
     # Heartbeat
@@ -153,7 +156,6 @@ class StrategyBase:
         while self._running:
             payload = json.dumps({
                 "service": self.name,
-                "mode": self.mode,
                 "candles_buffered": len(self._candles),
                 "ts": datetime.now(timezone.utc).isoformat(),
             })
@@ -191,7 +193,8 @@ class StrategyBase:
             level=os.getenv("LOG_LEVEL", "INFO"),
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         )
-        log.info("Starting %s in %s mode (window=%d)", self.name, self.mode, self.window_size)
+        log.info("Starting %s (window=%d) — publishing all signals to %s",
+                 self.name, self.window_size, SIGNAL_ALL)
 
         self._fetch_symbol_info()
         self._seed_from_history()
@@ -217,9 +220,6 @@ class StrategyBase:
 
                 self._candles.append(candle)
 
-                if self.mode == "off":
-                    continue
-
                 try:
                     signal = self.on_candle(list(self._candles))
                 except Exception as exc:
@@ -227,7 +227,6 @@ class StrategyBase:
                     continue
 
                 if signal is not None:
-                    signal.mode = self.mode
                     self._publish_signal(signal)
         except KeyboardInterrupt:
             pass

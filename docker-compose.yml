@@ -145,7 +145,6 @@ services:
     container_name: mt5-strategy-ema-scalp
     environment:
       STRATEGY_NAME: ema-scalp
-      MODE: ${EMA_SCALP_MODE:-live}
       REDIS_URL: ${REDIS_URL}
       MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
       EMA_FAST: ${EMA_FAST:-9}
@@ -170,7 +169,6 @@ services:
     container_name: mt5-strategy-liq-sweep
     environment:
       STRATEGY_NAME: liq-sweep
-      MODE: ${LIQ_SWEEP_MODE:-shadow}
       REDIS_URL: ${REDIS_URL}
       MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
       PIVOT_LEFT: ${LIQ_SWEEP_PIVOT_LEFT:-5}
@@ -192,7 +190,6 @@ services:
     container_name: mt5-strategy-ob-fvg
     environment:
       STRATEGY_NAME: ob-fvg
-      MODE: ${OB_FVG_MODE:-shadow}
       REDIS_URL: ${REDIS_URL}
       MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
       MIN_IMPULSE_POINTS: ${OB_FVG_MIN_IMPULSE_POINTS:-50}

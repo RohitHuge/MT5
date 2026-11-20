@@ -10,6 +10,7 @@ Endpoints:
   GET  /api/compare                            all strategies side-by-side
   GET  /api/live_positions                     open real + shadow positions
   POST /api/strategy/{name}/set_mode           promote / demote strategy
+  WS   /ws/signals                             live signal feed (Redis pubsub)
 
 All DB calls go through shared.db which owns the connection pool.
 Bridge calls are plain requests.get() with a short timeout — if the bridge
@@ -18,15 +19,18 @@ crashing, so the dashboard stays usable even when MT5 is offline.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
+import threading
 from datetime import date, datetime, timezone, timedelta
 from typing import Any
 
 import redis as redis_lib
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -36,6 +40,7 @@ import sys
 sys.path.insert(0, "/app")
 
 from shared import db
+from shared.channels import SIGNAL_LIVE, SIGNAL_SHADOW_PATTERN
 
 load_dotenv()
 
@@ -128,12 +133,27 @@ async def health():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Strategies list
+# Strategies list  (cached 60 s in Redis)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/strategies")
 async def list_strategies():
-    """Return all strategies with current mode and today's P&L (real + shadow)."""
+    """Return all strategies with current mode and today's P&L (real + shadow).
+
+    Result is cached in Redis under key 'cache:strategies' for 60 seconds to
+    reduce DB load on every dashboard page load.
+    """
+    cache_key = "cache:strategies"
+
+    # Cache read
+    try:
+        r = _redis_client()
+        cached = r.get(cache_key)
+        if cached:
+            return JSONResponse(content=json.loads(cached))
+    except Exception as exc:
+        log.warning("Redis cache read failed (strategies): %s", exc)
+
     strategies = db.get_all_strategies()
 
     today = date.today()
@@ -160,6 +180,13 @@ async def list_strategies():
             s["today_trades"] = 0
             s["today_win_rate"] = 0.0
         enriched.append(s)
+
+    # Cache write — best-effort, don't fail the request if Redis is down
+    try:
+        r = _redis_client()
+        r.set(cache_key, json.dumps(enriched, default=str), ex=60)
+    except Exception as exc:
+        log.warning("Redis cache write failed (strategies): %s", exc)
 
     return enriched
 
@@ -220,7 +247,7 @@ async def equity_curve(name: str, days: int = 30):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Comparison
+# Comparison  (cached 5 min in Redis per distinct `days` value)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/compare")
@@ -229,7 +256,21 @@ async def compare(days: int = 30):
 
     Also computes week and month sub-totals so the table can show
     'this week' and 'this month' columns without extra queries.
+
+    Result is cached in Redis under key 'cache:compare:{days}' for 300 seconds
+    (5 minutes) to reduce DB load on the most expensive dashboard query.
     """
+    cache_key = f"cache:compare:{days}"
+
+    # Cache read
+    try:
+        rc = _redis_client()
+        cached = rc.get(cache_key)
+        if cached:
+            return JSONResponse(content=json.loads(cached))
+    except Exception as exc:
+        log.warning("Redis cache read failed (compare): %s", exc)
+
     try:
         base = db.get_comparison_summary(days=days)
         week = db.get_comparison_summary(days=7)
@@ -263,23 +304,39 @@ async def compare(days: int = 30):
                 row[key] = float(row[key])
         result.append(row)
 
+    # Cache write — best-effort
+    try:
+        rc = _redis_client()
+        rc.set(cache_key, json.dumps(result, default=str), ex=300)
+    except Exception as exc:
+        log.warning("Redis cache write failed (compare): %s", exc)
+
     return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Live positions
+# Live positions  (real + shadow with intraday floating P&L)
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Multiplier for XAUUSD unrealised P&L calculation:
+#   tick_value=1.0, point=0.01  →  price_diff / 0.01 * 1.0 * lots = lots * 100
+_XAUUSD_MULTIPLIER = 100.0
+
 
 @app.get("/api/live_positions")
 async def live_positions():
-    """Open real trades (from DB is_open=TRUE) + open virtual trades (outcome=OPEN).
+    """Open real trades (from bridge) + open shadow virtual trades (from Postgres).
 
-    Unrealised P&L for real trades comes from the MT5 bridge /positions endpoint.
-    If the bridge is unreachable, stored gross_pnl is used as a fallback.
+    For shadow positions, calls the bridge /candles endpoint to get the latest
+    close price and computes an intraday unrealised P&L.
+
+    If the bridge is unreachable all bridge-dependent fields are None / absent;
+    the endpoint still returns shadow positions from the DB so the dashboard
+    remains useful.
     """
     result: dict[str, Any] = {"real": [], "shadow": [], "bridge_live": False}
 
-    # Real positions
+    # ── Real positions ────────────────────────────────────────────────────────
     try:
         real_db = db.get_open_real_trades()
     except Exception as exc:
@@ -299,20 +356,56 @@ async def live_positions():
             trade["unrealised_pnl"] = bridge_map[ticket].get("profit")
         else:
             trade["unrealised_pnl"] = trade.get("gross_pnl")
+        trade["is_shadow"] = False
         # Coerce datetimes to ISO strings
         for k in ("opened_at", "closed_at", "updated_at"):
             if hasattr(trade.get(k), "isoformat"):
                 trade[k] = trade[k].isoformat()
         result["real"].append(trade)
 
-    # Shadow positions (open virtual trades)
+    # ── Shadow (virtual) open positions ──────────────────────────────────────
     try:
         shadow_open = db.get_open_virtual_trades()
     except Exception as exc:
         log.warning("get_open_virtual_trades failed: %s", exc)
         shadow_open = []
 
+    # Fetch latest candle once — shared across all open shadow trades
+    latest_candle = _bridge_get("/candles?symbol=XAUUSD&timeframe=M5&count=1")
+    current_price: float | None = None
+    if latest_candle:
+        try:
+            # Bridge returns either a list of candles or a dict with a "candles" key
+            if isinstance(latest_candle, list) and latest_candle:
+                current_price = float(latest_candle[-1].get("close", 0) or 0) or None
+            elif isinstance(latest_candle, dict):
+                candles = latest_candle.get("candles") or []
+                if candles:
+                    current_price = float(candles[-1].get("close", 0) or 0) or None
+        except Exception as exc:
+            log.warning("Could not parse latest candle: %s", exc)
+
     for trade in shadow_open:
+        trade["is_shadow"] = True
+        # Compute floating P&L
+        try:
+            if current_price is not None:
+                entry = float(trade.get("entry_price") or 0)
+                lots = float(trade.get("lots") or 0)
+                direction = str(trade.get("direction", "")).upper()
+                direction_sign = 1.0 if direction == "BUY" else -1.0
+                trade["current_price"] = current_price
+                trade["unrealised_pnl"] = round(
+                    (current_price - entry) * direction_sign * lots * _XAUUSD_MULTIPLIER, 2
+                )
+            else:
+                trade["current_price"] = None
+                trade["unrealised_pnl"] = None
+        except Exception as exc:
+            log.warning("unrealised_pnl calc failed for virtual trade: %s", exc)
+            trade["current_price"] = None
+            trade["unrealised_pnl"] = None
+
         for k in ("signal_ts", "opened_at", "closed_at"):
             if hasattr(trade.get(k), "isoformat"):
                 trade[k] = trade[k].isoformat()
@@ -351,6 +444,15 @@ async def set_mode(name: str, body: SetModeRequest):
         log.error("set_mode failed for %s -> %s: %s", name, mode, exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
+    # Invalidate cached data that includes strategy modes
+    try:
+        rc = _redis_client()
+        rc.delete("cache:strategies")
+        rc.delete("cache:compare:7")
+        rc.delete("cache:compare:30")
+    except Exception:
+        pass  # cache invalidation is best-effort
+
     return {"strategy": name, "mode": mode, "ok": True}
 
 
@@ -366,3 +468,101 @@ async def account():
         return {"balance": None, "equity": None, "margin": None, "free_margin": None, "bridge_live": False}
     data["bridge_live"] = True
     return data
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WebSocket — live signal feed
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_pubsub_thread(queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, stop_event: threading.Event) -> None:
+    """Background thread: subscribes to Redis signal channels and pushes
+    messages onto *queue* using the asyncio event loop.
+
+    Subscribes to:
+      - SIGNAL_LIVE  ("signals:live")
+      - SIGNAL_SHADOW_PATTERN  ("signals:shadow:*")  via psubscribe
+
+    Runs until *stop_event* is set (triggered on WebSocket disconnect).
+    """
+    try:
+        rc = redis_lib.from_url(REDIS_URL, decode_responses=True)
+        pubsub = rc.pubsub()
+        pubsub.subscribe(SIGNAL_LIVE)
+        pubsub.psubscribe(SIGNAL_SHADOW_PATTERN)
+
+        for message in pubsub.listen():
+            if stop_event.is_set():
+                break
+            if message["type"] not in ("message", "pmessage"):
+                continue
+            data = message.get("data")
+            if not data:
+                continue
+            # Enqueue onto the asyncio event loop from this sync thread
+            loop.call_soon_threadsafe(queue.put_nowait, data)
+
+    except Exception as exc:
+        log.warning("pubsub thread error: %s", exc)
+    finally:
+        try:
+            pubsub.unsubscribe()
+            pubsub.punsubscribe()
+            pubsub.close()
+        except Exception:
+            pass
+
+
+@app.websocket("/ws/signals")
+async def ws_signals(websocket: WebSocket):
+    """WebSocket endpoint that streams live signals to the browser.
+
+    Threading bridge:
+      A background (daemon) thread runs a sync Redis pubsub loop and pushes
+      raw JSON strings onto an asyncio.Queue via loop.call_soon_threadsafe().
+      The async handler below drains that queue and forwards each message to
+      the WebSocket client.  On disconnect a threading.Event signals the thread
+      to stop subscribing.
+    """
+    await websocket.accept()
+
+    loop = asyncio.get_event_loop()
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    stop_event = threading.Event()
+
+    thread = threading.Thread(
+        target=_run_pubsub_thread,
+        args=(queue, loop, stop_event),
+        daemon=True,
+        name="ws-signals-pubsub",
+    )
+    thread.start()
+
+    try:
+        while True:
+            # Wait for the next message from Redis (with a small timeout so we
+            # can detect disconnects promptly even when no signals are flowing)
+            try:
+                raw = await asyncio.wait_for(queue.get(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # Send a keepalive ping so the browser can detect stale connections
+                try:
+                    await websocket.send_text(json.dumps({"type": "ping"}))
+                except Exception:
+                    break
+                continue
+
+            try:
+                payload = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                payload = {"raw": raw}
+
+            try:
+                await websocket.send_text(json.dumps(payload))
+            except Exception:
+                break  # client disconnected
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        stop_event.set()
+        log.debug("ws_signals: client disconnected, pubsub thread signalled to stop")
