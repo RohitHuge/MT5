@@ -11,6 +11,7 @@
 //|   GET  /health                                                   |
 //|   GET  /account                                                  |
 //|   GET  /symbol/{symbol}                                          |
+//|   GET  /tick?symbol=X                                            |
 //|   GET  /candles?symbol=X&timeframe=Y&count=N                     |
 //|   GET  /positions                                                |
 //|   POST /order                                                    |
@@ -236,6 +237,8 @@ string RouteRequest(string method, string path, string body)
       json = HandlePositions();
    else if(StringFind(pathOnly, "/symbol/") == 0 && method == "GET")
       json = HandleSymbol(StringSubstr(pathOnly, 8));
+   else if(pathOnly == "/tick" && method == "GET")
+      json = HandleTick(query);
    else if(StringFind(pathOnly, "/close/") == 0 && method == "POST")
       json = HandleClose((long)StringToInteger(StringSubstr(pathOnly, 7)));
    else if(pathOnly == "/order" && method == "POST")
@@ -282,6 +285,29 @@ string HandleAccount()
       JDbl("free_margin",     free,   2)  + "," +
       JDbl("margin_level_pct",level,  2)  + "," +
       JStr("currency",        cur)        +
+   "}";
+}
+
+string HandleTick(string query)
+{
+   string symbol = QueryParam(query, "symbol");
+   if(symbol == "") symbol = "XAUUSD";
+
+   if(!SymbolSelect(symbol, true))
+      return "{\"error\":\"symbol not found\"}";
+
+   MqlTick tick;
+   if(!SymbolInfoTick(symbol, tick))
+      return "{\"error\":\"cannot get tick for " + symbol + "\"}";
+
+   int    digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+   string ts     = FormatTime((long)tick.time);
+
+   return "{" +
+      JStr("symbol", symbol)         + "," +
+      JDbl("bid",    tick.bid, digits) + "," +
+      JDbl("ask",    tick.ask, digits) + "," +
+      JStr("time",   ts)              +
    "}";
 }
 

@@ -10,7 +10,7 @@ import type { Candle } from '../../types/api'
 export type Overlay =
   | { kind: 'ema'; period: number; color: string; data: { time: number; value: number }[] }
   | { kind: 'zones'; color: string; zones: { timeStart: number; high: number; low: number }[] }
-  | { kind: 'hline'; color: string; times: number[] }
+  | { kind: 'hline'; color: string; levels: number[] }
   | { kind: 'markers'; markers: SeriesMarker[] }
 
 /** Marker shape accepted by lightweight-charts v4's `candles.setMarkers()`. */
@@ -39,7 +39,7 @@ interface CandleChartProps {
   showVolume?: boolean
 }
 
-const POLL_MS = 5_000
+const TICK_MS = 500
 const BACKOFF_MAX_MS = 30_000
 
 function toPoints(rows: Candle[]): CandlePoint[] {
@@ -82,6 +82,8 @@ export function CandleChart({
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const overlaySeriesRef = useRef<ISeriesApi<'Line'>[]>([])
+
+  const lastBarRef = useRef<CandlePoint | null>(null)
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
   const [error, setError] = useState<string | null>(null)
@@ -205,6 +207,7 @@ export function CandleChart({
         })
       }
       lastTime = point.time
+      lastBarRef.current = point
       setStatus('ready')
     }
 
@@ -222,21 +225,27 @@ export function CandleChart({
       }
     }
 
-    // The bridge has no tick endpoint, so re-reading the newest bar is the only
-    // way to pick up a bar that closed between socket messages.
+    // Poll /api/tick every 500ms to animate the forming bar's close price.
+    // The WebSocket handles closed bars; this only updates the last bar's close
+    // so the chart moves in real time between bar closes.
     const startPolling = () => {
       pollTimer = setInterval(async () => {
         try {
-          const rows = await getJson<Candle[]>(
-            `/api/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&count=2`,
+          const tick = await getJson<{ bid: number; ask: number; time: string }>(
+            `/api/tick?symbol=${encodeURIComponent(symbol)}`,
           )
-          if (cancelled || !Array.isArray(rows)) return
-          const points = toPoints(rows)
-          for (const point of points) applyOne(point)
+          if (cancelled || !tick || !lastBarRef.current) return
+          const last = lastBarRef.current
+          applyOne({
+            ...last,
+            close: tick.ask,
+            high: Math.max(last.high, tick.ask),
+            low: Math.min(last.low, tick.ask),
+          })
         } catch {
-          // Polling is best-effort; the socket remains the primary feed.
+          // Tick polling is best-effort; the chart still works from closed bars alone.
         }
-      }, POLL_MS)
+      }, TICK_MS)
     }
 
     const connect = () => {
@@ -343,7 +352,7 @@ export function CandleChart({
 
       if (overlay.kind === 'hline') {
         // One dashed price line per level — clearer than a flat series.
-        for (const level of overlay.times) {
+        for (const level of overlay.levels) {
           candles.createPriceLine({
             price: level,
             color: overlay.color,

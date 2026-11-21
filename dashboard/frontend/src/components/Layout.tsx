@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard,
   LineChart,
@@ -12,11 +13,12 @@ import {
 import { MT5StatusBadge } from './MT5StatusBadge'
 import { AccountSummary } from './AccountSummary'
 import { useAccountStatus } from '../hooks/useAccountStatus'
+import { getJson } from '../lib/api'
 
-const STRATEGIES = [
-  { name: 'ema-scalp', label: 'EMA Scalp' },
-  { name: 'ob-fvg', label: 'OB+FVG' },
-  { name: 'liq-sweep', label: 'Liq Sweep' },
+const FALLBACK_STRATEGIES = [
+  { name: 'ema-scalp', display_name: 'EMA Scalp' },
+  { name: 'ob-fvg',    display_name: 'OB+FVG' },
+  { name: 'liq-sweep', display_name: 'Liq Sweep' },
 ]
 
 const NAV = [
@@ -39,6 +41,16 @@ function navClass(isActive: boolean) {
 export function Layout() {
   useAccountStatus()
   const [strategiesOpen, setStrategiesOpen] = useState(true)
+  const { data: strategiesData } = useQuery({
+    queryKey: ['strategies-list'],
+    queryFn: () => getJson<{ name: string; display_name: string }[]>('/api/strategies'),
+    staleTime: 30_000,
+    select: (rows) =>
+      Array.isArray(rows) && rows.length > 0
+        ? rows.map((r) => ({ name: r.name, display_name: r.display_name ?? r.name }))
+        : FALLBACK_STRATEGIES,
+  })
+  const strategies = strategiesData ?? FALLBACK_STRATEGIES
 
   return (
     <div className="flex h-full min-h-screen flex-col">
@@ -82,13 +94,13 @@ export function Layout() {
 
             {strategiesOpen && (
               <div className="ml-3 flex flex-col gap-0.5 border-l border-border pl-2">
-                {STRATEGIES.map((s) => (
+                {strategies.map((s) => (
                   <NavLink
                     key={s.name}
                     to={`/strategy/${s.name}`}
                     className={({ isActive }) => navClass(isActive)}
                   >
-                    <span className="truncate">{s.label}</span>
+                    <span className="truncate">{s.display_name}</span>
                   </NavLink>
                 ))}
               </div>

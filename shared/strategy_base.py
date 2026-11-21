@@ -91,6 +91,26 @@ class StrategyBase:
     # Startup helpers
     # -------------------------------------------------------------------------
 
+    def _register_with_dashboard(self) -> None:
+        dashboard_url = os.getenv("DASHBOARD_URL", "").rstrip("/")
+        if not dashboard_url:
+            return
+        try:
+            requests.post(
+                f"{dashboard_url}/api/strategies/register",
+                json={
+                    "name": self.name,
+                    "display_name": self.name.replace("-", " ").title(),
+                    "symbol": self.symbol,
+                    "timeframe": self.timeframe,
+                    "mode": self.mode,
+                },
+                timeout=5,
+            )
+            log.info("Registered with dashboard: %s", self.name)
+        except Exception as exc:
+            log.warning("Could not register with dashboard (non-fatal): %s", exc)
+
     def _fetch_symbol_info(self) -> None:
         try:
             r = requests.get(
@@ -255,6 +275,7 @@ class StrategyBase:
                  self.name, self.window_size, SIGNAL_ALL)
 
         self._fetch_symbol_info()
+        self._register_with_dashboard()
         self._seed_from_history()
 
         self._running = True

@@ -108,7 +108,7 @@ function buildOverlays(
       const levels = Array.isArray(raw)
         ? raw.map((v) => toNumber(v)).filter((v): v is number => v !== null)
         : []
-      if (levels.length) overlays.push({ kind: 'hline', color, times: levels })
+      if (levels.length) overlays.push({ kind: 'hline', color, levels })
     }
   }
 

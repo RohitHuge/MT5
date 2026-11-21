@@ -245,6 +245,14 @@ async def symbol_info(symbol: str):
     return data
 
 
+@app.get("/tick")
+async def tick(symbol: str = "XAUUSD"):
+    data = await call_ea("GET", f"/tick?symbol={symbol}")
+    if "error" in data:
+        raise HTTPException(status_code=404, detail=data["error"])
+    return data
+
+
 @app.get("/candles")
 async def candles(symbol: str, timeframe: str, count: int = 500):
     tf = timeframe.upper()
