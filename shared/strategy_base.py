@@ -47,6 +47,11 @@ class StrategyBase:
         self.timeframe = timeframe
         self.window_size = window_size
 
+        # Signals carry the mode they were emitted under. Routing is downstream
+        # (executor/shadow-tracker read the DB), so this is informational only —
+        # but every subclass passes mode=self.mode to Signal(), so it must exist.
+        self.mode = os.getenv("MODE", "shadow")
+
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         self.mt5_bridge_url = os.getenv("MT5_BRIDGE_URL", "http://localhost:8000").rstrip("/")
 
@@ -73,6 +78,14 @@ class StrategyBase:
         shadow-tracker) decide what to do with it.
         """
         raise NotImplementedError
+
+    def _get_indicator_state(self) -> dict:
+        """Current indicator values, published to the dashboard for chart overlays.
+
+        Subclasses override this. Returning per-strategy keys (EMA levels, OB/FVG
+        zones, pivots) keeps the snapshot payload schema-less on the DB side.
+        """
+        return {}
 
     # -------------------------------------------------------------------------
     # Startup helpers
@@ -166,6 +179,51 @@ class StrategyBase:
             time.sleep(10)
 
     # -------------------------------------------------------------------------
+    # Indicator snapshots (dashboard chart overlays)
+    # -------------------------------------------------------------------------
+
+    def _snapshot_loop(self) -> None:
+        """Publish indicator state every 60s — Redis for the live overlay, Postgres for history.
+
+        Batched rather than per-candle: snapshots only feed chart overlays, and one
+        row per minute is plenty at M5. Postgres is best-effort so a service without
+        psycopg2 (or a DB outage) degrades to Redis-only instead of dying.
+        """
+        db_mod = None
+        try:
+            from . import db as db_mod  # noqa: PLC0415 — optional dependency
+        except Exception as exc:  # pragma: no cover
+            log.warning("Snapshot DB writes disabled (shared.db unavailable): %s", exc)
+
+        while self._running:
+            try:
+                if not self._candles:
+                    time.sleep(60)
+                    continue
+
+                indicators = self._get_indicator_state()
+                if indicators:
+                    candle_ts = self._candles[-1].timestamp
+                    state = {
+                        "ts": candle_ts.isoformat(),
+                        "strategy": self.name,
+                        "indicators": indicators,
+                    }
+                    try:
+                        self._redis.set(f"snapshot:{self.name}", json.dumps(state, default=str))
+                    except Exception as exc:
+                        log.debug("Snapshot Redis write failed: %s", exc)
+
+                    if db_mod is not None:
+                        try:
+                            db_mod.save_snapshot(self.name, candle_ts, indicators)
+                        except Exception as exc:
+                            log.debug("Snapshot DB write failed: %s", exc)
+            except Exception as exc:
+                log.warning("Snapshot loop error: %s", exc)
+            time.sleep(60)
+
+    # -------------------------------------------------------------------------
     # Main loop
     # -------------------------------------------------------------------------
 
@@ -202,6 +260,8 @@ class StrategyBase:
         self._running = True
         hb_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
         hb_thread.start()
+        snapshot_thread = threading.Thread(target=self._snapshot_loop, daemon=True)
+        snapshot_thread.start()
 
         channel = CANDLE_CHANNEL.format(symbol=self.symbol, timeframe=self.timeframe)
         pubsub = self._redis.pubsub(ignore_subscribe_messages=True)

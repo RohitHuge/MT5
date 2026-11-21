@@ -885,6 +885,61 @@ async def strategy_snapshots(name: str, limit: int = 200):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Strategy trade history (individual rows, closed trades included)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _parse_iso_param(value: str | None) -> datetime | None:
+    """Parse an optional ISO timestamp query param; None when absent or invalid."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        log.warning("Ignoring unparseable ISO timestamp %r", value)
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+@app.get("/api/strategy/{name}/trades")
+async def strategy_trades(
+    name: str,
+    limit: int = 200,
+    offset: int = 0,
+    outcome: str | None = None,
+    from_iso: str | None = None,
+    to_iso: str | None = None,
+):
+    """Individual virtual trades for a strategy, newest signal first.
+
+    Unlike /api/live_positions this includes closed trades, so the dashboard can
+    render a signal-history table with outcome and realised P&L. The {rows,total}
+    envelope carries the pagination total.
+    """
+    empty = {"rows": [], "total": 0}
+    from_ts = _parse_iso_param(from_iso)
+    to_ts = _parse_iso_param(to_iso)
+
+    try:
+        rows = db.get_virtual_trades(
+            name,
+            limit=limit,
+            offset=offset,
+            outcome=outcome,
+            from_ts=from_ts,
+            to_ts=to_ts,
+        )
+        total = db.count_virtual_trades(
+            name, outcome=outcome, from_ts=from_ts, to_ts=to_ts
+        )
+    except Exception as exc:
+        log.warning("virtual trade query failed for %s: %s", name, exc)
+        return empty
+
+    return {"rows": rows, "total": total}
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Strategy self-registration
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -31,6 +31,7 @@ from pathlib import Path
 # shared/ two levels up; backtesting_src added by Dockerfile via PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
+from shared.backtest_http import build_app, start_in_thread
 from shared.models import Candle, Signal
 from shared.strategy_base import StrategyBase
 
@@ -108,7 +109,7 @@ def _to_bt_candle(c: Candle) -> BtCandle:
 
 class LiquiditySweepStrategy(StrategyBase):
 
-    def __init__(self) -> None:
+    def __init__(self, overrides: dict | None = None) -> None:
         name = os.getenv("STRATEGY_NAME", "liq-sweep")
         super().__init__(
             name=name,
@@ -128,6 +129,69 @@ class LiquiditySweepStrategy(StrategyBase):
 
         # Dedup: set of (sweep_candle_ts_iso, direction) already signalled
         self._emitted: set[tuple[str, str]] = set()
+
+        # Latest setup state, refreshed each candle for the snapshot loop
+        self._last_state: dict = {}
+
+        self._apply_overrides(overrides or {})
+
+    def _apply_overrides(self, overrides: dict) -> None:
+        """Apply backtest param overrides post-construction.
+
+        Params come from the environment in __init__, so overrides are applied
+        as attributes rather than by mutating os.environ (not thread-safe while
+        the live loop is running).
+        """
+        if "risk_pct" in overrides and overrides["risk_pct"] is not None:
+            try:
+                self.risk_pct = float(overrides["risk_pct"])
+            except (TypeError, ValueError):
+                log.warning("Ignoring invalid risk_pct=%r", overrides["risk_pct"])
+        if "rr_target" in overrides and overrides["rr_target"] is not None:
+            try:
+                self.rr_target = float(overrides["rr_target"])
+            except (TypeError, ValueError):
+                log.warning("Ignoring invalid rr_target=%r", overrides["rr_target"])
+
+        for cfg_key, cast in (
+            ("pivot_left", int),
+            ("pivot_right", int),
+            ("zone_tolerance_points", int),
+        ):
+            if cfg_key in overrides and overrides[cfg_key] is not None:
+                try:
+                    setattr(self._config, cfg_key, cast(overrides[cfg_key]))
+                except (TypeError, ValueError):
+                    log.warning("Ignoring invalid override %s=%r", cfg_key, overrides[cfg_key])
+
+    def _get_indicator_state(self) -> dict:
+        return dict(self._last_state)
+
+    def _record_state(self, entry_setups: list) -> None:
+        """Cache pivot levels and the latest setup state for the chart overlay.
+
+        Pivots come from the sweep legs of the recent setups — that is the only
+        place the pipeline exposes them without re-running it.
+        """
+        highs: list[float] = []
+        lows: list[float] = []
+        for setup in entry_setups[:10]:
+            sweep = getattr(setup, "sweep", None)
+            extreme = getattr(sweep, "wick_extreme", None) if sweep else None
+            if extreme is None:
+                continue
+            if setup.direction == "SELL":
+                highs.append(round(float(extreme), 2))
+            else:
+                lows.append(round(float(extreme), 2))
+
+        self._last_state = {
+            "pivot_highs": highs,
+            "pivot_lows": lows,
+            "setup_state": entry_setups[0].state if entry_setups else "NONE",
+            "setup_count": len(entry_setups),
+        }
+
 
     def on_candle(self, candles: list[Candle]) -> Signal | None:
         if len(candles) < 100:   # need enough history for meaningful pivots/zones
@@ -152,6 +216,9 @@ class LiquiditySweepStrategy(StrategyBase):
 
         # Find the most recent new ENTRY_READY setup
         entry_setups = [s for s in setups if s.state == SetupState.ENTRY_READY]
+
+        self._record_state(entry_setups)
+
         if not entry_setups:
             return None
 
@@ -203,5 +270,89 @@ class LiquiditySweepStrategy(StrategyBase):
         return None   # all recent setups already emitted
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Backtest — one batch pipeline run over the whole series
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_backtest(candles: list[Candle], params: dict) -> list[dict]:
+    """Run the sweep pipeline once over the full series and resolve fills.
+
+    Unlike the other strategies this pipeline is not per-candle: it returns all
+    setups for the whole window in one call, so there is no sliding-window loop.
+    That also means params can never change mid-run.
+    """
+    from shared.backtest_sim import simulate_trades
+
+    svc = LiquiditySweepStrategy(overrides=params)
+    simulated_equity = float(params.get("equity", 10000.0))
+
+    bt_m5 = [_to_bt_candle(c) for c in candles]
+    bt_m15 = _aggregate_m5_to_m15(bt_m5)
+    if len(bt_m15) < 20:
+        log.warning("Backtest needs >=20 M15 candles, got %d", len(bt_m15))
+        return []
+
+    try:
+        setups = run_liquidity_sweep_strategy(
+            m15_candles=bt_m15,
+            m5_candles=bt_m5,
+            config=svc._config,
+            point=svc.point,
+        )
+    except Exception as exc:
+        log.exception("Backtest pipeline failed: %s", exc)
+        return []
+
+    # Map M15 rejection timestamps back to M5 indexes so fills resolve on the
+    # same bar the live loop would have traded from.
+    index_by_ts = {c.timestamp: i for i, c in enumerate(candles)}
+
+    signals: list[dict] = []
+    for setup in setups:
+        if setup.state != SetupState.ENTRY_READY:
+            continue
+        entry_price = setup.signal_price
+        sl_price = setup.stop_loss_price
+        if entry_price is None or sl_price is None:
+            continue
+
+        sl_distance = abs(entry_price - sl_price)
+        if sl_distance < svc.point:
+            continue
+
+        tp_price = (
+            entry_price + sl_distance * svc.rr_target
+            if setup.direction == "BUY"
+            else entry_price - sl_distance * svc.rr_target
+        )
+
+        rejection_ts = setup.retest.rejection_candle_ts
+        # Rejection candles are M15; snap to the first M5 bar at/after it.
+        idx = next(
+            (index_by_ts[c.timestamp] for c in candles if c.timestamp >= rejection_ts),
+            None,
+        )
+        if idx is None:
+            continue
+
+        signals.append({
+            "direction": setup.direction,
+            "entry_price": entry_price,
+            "sl_price": sl_price,
+            "tp_price": tp_price,
+            "lots": svc.calc_lots(simulated_equity, svc.risk_pct, sl_distance),
+            "signal_ts": candles[idx].timestamp,
+            "index": idx,
+        })
+
+    return simulate_trades(
+        candles, signals, point=svc.point, tick_value=svc.tick_value
+    )
+
+
+http_app = build_app("liq-sweep", _run_backtest)
+
+
 if __name__ == "__main__":
+    start_in_thread(http_app)
     LiquiditySweepStrategy().run()

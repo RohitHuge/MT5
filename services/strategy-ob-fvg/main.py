@@ -30,6 +30,7 @@ _bt_src = Path(__file__).resolve().parents[0] / "backtesting_src"
 if _bt_src.exists() and str(_bt_src) not in sys.path:
     sys.path.insert(0, str(_bt_src))
 
+from shared.backtest_http import build_app, start_in_thread
 from shared.models import Candle, Signal
 from shared.strategy_base import StrategyBase
 
@@ -43,7 +44,7 @@ log = logging.getLogger(__name__)
 class ObFvgStrategy(StrategyBase):
     """Order Block + Fair Value Gap confluence strategy."""
 
-    def __init__(self) -> None:
+    def __init__(self, overrides: dict | None = None) -> None:
         name = os.getenv("STRATEGY_NAME", "ob-fvg")
         super().__init__(
             name=name,
@@ -63,6 +64,59 @@ class ObFvgStrategy(StrategyBase):
         # Prevents re-emitting a signal for the same OB on every new candle
         # while price remains inside the OB+FVG zone.
         self._emitted: set[tuple[str, str]] = set()
+
+        # Latest structure state, refreshed each candle for the snapshot loop
+        self._last_state: dict = {}
+
+        self._apply_overrides(overrides or {})
+
+    def _apply_overrides(self, overrides: dict) -> None:
+        """Apply backtest param overrides post-construction.
+
+        Params come from the environment in __init__, so overrides are applied
+        as attributes rather than by mutating os.environ (not thread-safe while
+        the live loop is running).
+        """
+        typed = {
+            "min_impulse_points": float,
+            "min_gap_points": float,
+            "ob_lookback": int,
+            "risk_pct": float,
+            "rr_target": float,
+        }
+        for key, cast in typed.items():
+            if key in overrides and overrides[key] is not None:
+                try:
+                    setattr(self, key, cast(overrides[key]))
+                except (TypeError, ValueError):
+                    log.warning("Ignoring invalid override %s=%r", key, overrides[key])
+
+    def _get_indicator_state(self) -> dict:
+        return dict(self._last_state)
+
+    def _record_state(self, valid_obs: list, active_fvgs: list) -> None:
+        """Cache the OB/FVG zones for the snapshot loop's chart overlay."""
+        self._last_state = {
+            "ob_zones": [
+                {
+                    "timeStart": ob.origin_ts.isoformat(),
+                    "high": round(ob.high, 2),
+                    "low": round(ob.low, 2),
+                    "direction": ob.direction,
+                }
+                for ob in valid_obs[-20:]
+            ],
+            "fvg_zones": [
+                {
+                    "timeStart": fvg.origin_ts.isoformat(),
+                    "high": round(fvg.gap_high, 2),
+                    "low": round(fvg.gap_low, 2),
+                    "direction": fvg.direction,
+                }
+                for fvg in active_fvgs[-20:]
+            ],
+        }
+
 
     def on_candle(self, candles: list[Candle]) -> Signal | None:
         # Need at least lookback + 2 extra candles for the OB pattern check
@@ -86,6 +140,8 @@ class ObFvgStrategy(StrategyBase):
 
         valid_obs = [ob for ob in obs if ob.is_valid]
         active_fvgs = [fvg for fvg in fvgs if not fvg.is_filled]
+
+        self._record_state(valid_obs, active_fvgs)
 
         if not valid_obs or not active_fvgs:
             return None
@@ -168,5 +224,55 @@ class ObFvgStrategy(StrategyBase):
         )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Backtest — drives the live on_candle() over historical candles
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_backtest(candles: list[Candle], params: dict) -> list[dict]:
+    """Replay the strategy and resolve fills.
+
+    on_candle() is already per-candle (it reads candles[-1] and dedups by OB
+    origin), so the simulation feeds it a growing window exactly like the live
+    loop does — no duplicated detection logic. A fresh instance keeps the live
+    dedup set untouched, and fetch_equity is stubbed (it is a blocking HTTP call
+    per bar, and 0.0 would collapse every position to vol_min).
+    """
+    from shared.backtest_sim import simulate_trades
+
+    svc = ObFvgStrategy(overrides=params)
+    simulated_equity = float(params.get("equity", 10000.0))
+    svc.fetch_equity = lambda: simulated_equity  # type: ignore[method-assign]
+
+    signals: list[dict] = []
+    window = svc.window_size
+
+    for i in range(1, len(candles) + 1):
+        chunk = candles[max(0, i - window): i]
+        try:
+            signal = svc.on_candle(chunk)
+        except Exception as exc:
+            log.debug("backtest on_candle failed at %d: %s", i, exc)
+            continue
+        if signal is None:
+            continue
+        signals.append({
+            "direction": signal.direction,
+            "entry_price": signal.entry_price,
+            "sl_price": signal.sl_price,
+            "tp_price": signal.tp_price,
+            "lots": signal.lots,
+            "signal_ts": signal.candle_ts,
+            "index": i - 1,
+        })
+
+    return simulate_trades(
+        candles, signals, point=svc.point, tick_value=svc.tick_value
+    )
+
+
+http_app = build_app("ob-fvg", _run_backtest)
+
+
 if __name__ == "__main__":
+    start_in_thread(http_app)
     ObFvgStrategy().run()

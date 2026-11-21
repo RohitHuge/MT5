@@ -31,6 +31,7 @@ from pathlib import Path
 # shared/ is two levels up from this file; add repo root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
+from shared.backtest_http import build_app, start_in_thread
 from shared.models import Candle, Signal
 from shared.strategy_base import StrategyBase
 
@@ -132,7 +133,7 @@ def _detect_last_signal(
 
 class EmaScalpStrategy(StrategyBase):
 
-    def __init__(self) -> None:
+    def __init__(self, overrides: dict | None = None) -> None:
         name = os.getenv("STRATEGY_NAME", "ema-scalp")
         super().__init__(
             name=name,
@@ -148,7 +149,84 @@ class EmaScalpStrategy(StrategyBase):
         # Dedup: skip if we already emitted a signal for this candle timestamp
         self._last_signal_ts: datetime | None = None
 
+        # Latest indicator state, refreshed each candle for the snapshot loop
+        self._last_state: dict = {}
+
+        self._apply_overrides(overrides or {})
+
+    def _apply_overrides(self, overrides: dict) -> None:
+        """Apply backtest param overrides post-construction.
+
+        Params are read from the environment in __init__, so a backtest has to
+        set the attributes explicitly — mutating os.environ is not thread-safe
+        while the live loop is running.
+        """
+        typed = {
+            "rsi_min_buy": float,
+            "rsi_max_sell": float,
+            "risk_pct": float,
+            "rr_target": float,
+        }
+        for key, cast in typed.items():
+            if key in overrides and overrides[key] is not None:
+                try:
+                    setattr(self, key, cast(overrides[key]))
+                except (TypeError, ValueError):
+                    log.warning("Ignoring invalid override %s=%r", key, overrides[key])
+
+    def _get_indicator_state(self) -> dict:
+        return dict(self._last_state)
+
+    def _indicator_snapshot(self, candles: list[Candle]) -> dict:
+        """EMA levels and RSI at the latest candle — for chart overlays only.
+
+        Mirrors the seeding in _detect_last_signal rather than modifying it, so
+        the proven signal path stays untouched.
+        """
+        if len(candles) < _WARMUP + 1:
+            return {}
+
+        k9, k21, k50 = 2.0 / 10, 2.0 / 22, 2.0 / 51
+        ema9 = sum(c.close for c in candles[:9]) / 9.0
+        ema21 = sum(c.close for c in candles[:21]) / 21.0
+        ema50 = sum(c.close for c in candles[:50]) / 50.0
+
+        for c in candles[9:50]:
+            ema9 = _ema_step(ema9, c.close, k9)
+        for c in candles[21:50]:
+            ema21 = _ema_step(ema21, c.close, k21)
+
+        deltas = [candles[j].close - candles[j - 1].close for j in range(50, 50 + _RSI_PERIOD)]
+        avg_gain = sum(max(d, 0.0) for d in deltas) / _RSI_PERIOD
+        avg_loss = sum(abs(min(d, 0.0)) for d in deltas) / _RSI_PERIOD
+
+        for c in candles[50: 50 + _RSI_PERIOD]:
+            ema9 = _ema_step(ema9, c.close, k9)
+            ema21 = _ema_step(ema21, c.close, k21)
+            ema50 = _ema_step(ema50, c.close, k50)
+
+        prev_close = candles[_WARMUP - 1].close
+        for candle in candles[_WARMUP:]:
+            ema9 = _ema_step(ema9, candle.close, k9)
+            ema21 = _ema_step(ema21, candle.close, k21)
+            ema50 = _ema_step(ema50, candle.close, k50)
+            delta = candle.close - prev_close
+            avg_gain = (avg_gain * (_RSI_PERIOD - 1) + max(delta, 0.0)) / _RSI_PERIOD
+            avg_loss = (avg_loss * (_RSI_PERIOD - 1) + abs(min(delta, 0.0))) / _RSI_PERIOD
+            prev_close = candle.close
+
+        rsi = 100.0 - 100.0 / (1.0 + avg_gain / avg_loss) if avg_loss > 0.0 else 100.0
+        return {
+            "ema9": round(ema9, 5),
+            "ema21": round(ema21, 5),
+            "ema50": round(ema50, 5),
+            "rsi": round(rsi, 2),
+        }
+
+
     def on_candle(self, candles: list[Candle]) -> Signal | None:
+        self._last_state = self._indicator_snapshot(candles)
+
         result = _detect_last_signal(
             candles,
             point=self.point,
@@ -198,5 +276,75 @@ class EmaScalpStrategy(StrategyBase):
         )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Backtest — same signal logic as the live path, one bar at a time
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_backtest(candles: list[Candle], params: dict) -> list[dict]:
+    """Replay the strategy over historical candles and resolve fills.
+
+    A fresh instance is used so the live dedup state is untouched. fetch_equity
+    is replaced with a fixed simulated equity: it is one blocking HTTP call per
+    bar otherwise, and a 0.0 return would collapse every position to vol_min.
+    """
+    from shared.backtest_sim import simulate_trades
+
+    svc = EmaScalpStrategy(overrides=params)
+    simulated_equity = float(params.get("equity", 10000.0))
+    svc.fetch_equity = lambda: simulated_equity  # type: ignore[method-assign]
+
+    signals: list[dict] = []
+    last_ts = None
+
+    for i in range(_WARMUP + 1, len(candles) + 1):
+        # Growing prefix, capped at the live deque size — this is exactly what
+        # the strategy's rolling window looks like at each live candle. A fixed
+        # 65-candle slice does NOT work: the detector only reports a crossover
+        # it finds while scanning, so a minimal window returns almost nothing.
+        chunk = candles[max(0, i - svc.window_size): i]
+        result = _detect_last_signal(
+            chunk,
+            point=svc.point,
+            rsi_min_buy=svc.rsi_min_buy,
+            rsi_max_sell=svc.rsi_max_sell,
+        )
+        if result is None:
+            continue
+
+        direction, signal_ts, sl_price = result
+        # The detector reports the most recent crossover in the window; only
+        # act on each one once.
+        if signal_ts == last_ts:
+            continue
+        last_ts = signal_ts
+
+        entry_price = chunk[-1].close
+        sl_distance = abs(entry_price - sl_price)
+        if sl_distance < svc.point:
+            continue
+
+        tp_price = (
+            entry_price + sl_distance * svc.rr_target if direction == "BUY"
+            else entry_price - sl_distance * svc.rr_target
+        )
+        signals.append({
+            "direction": direction,
+            "entry_price": entry_price,
+            "sl_price": sl_price,
+            "tp_price": tp_price,
+            "lots": svc.calc_lots(simulated_equity, svc.risk_pct, sl_distance),
+            "signal_ts": signal_ts,
+            "index": i - 1,
+        })
+
+    return simulate_trades(
+        candles, signals, point=svc.point, tick_value=svc.tick_value
+    )
+
+
+http_app = build_app("ema-scalp", _run_backtest)
+
+
 if __name__ == "__main__":
+    start_in_thread(http_app)
     EmaScalpStrategy().run()

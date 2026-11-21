@@ -182,6 +182,76 @@ def get_open_virtual_trades(strategy: str | None = None) -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
 
 
+def get_virtual_trades(
+    strategy: str,
+    limit: int = 200,
+    offset: int = 0,
+    outcome: str | None = None,
+    from_ts: datetime | None = None,
+    to_ts: datetime | None = None,
+) -> list[dict]:
+    """Return individual virtual trades for a strategy, newest signal first.
+
+    Unlike get_open_virtual_trades this includes closed trades, so close_price,
+    outcome, closed_at and the P&L columns are populated. Paginated via
+    limit/offset; bounds apply to signal_ts because that is the indexed column
+    (idx_vt_strategy_date) and closed_at is NULL for open rows.
+    """
+    clauses = ["strategy = %s"]
+    params: list[Any] = [strategy]
+
+    if outcome:
+        clauses.append("outcome = %s")
+        params.append(outcome)
+    if from_ts is not None:
+        clauses.append("signal_ts >= %s")
+        params.append(from_ts)
+    if to_ts is not None:
+        clauses.append("signal_ts <= %s")
+        params.append(to_ts)
+
+    params.extend([max(1, limit), max(0, offset)])
+    sql = (
+        "SELECT * FROM virtual_trades WHERE "
+        + " AND ".join(clauses)
+        + " ORDER BY signal_ts DESC LIMIT %s OFFSET %s"
+    )
+
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, tuple(params))
+            return [_jsonable(dict(r)) for r in cur.fetchall()]
+
+
+def count_virtual_trades(
+    strategy: str,
+    outcome: str | None = None,
+    from_ts: datetime | None = None,
+    to_ts: datetime | None = None,
+) -> int:
+    """Total row count matching get_virtual_trades' filters (for pagination)."""
+    clauses = ["strategy = %s"]
+    params: list[Any] = [strategy]
+
+    if outcome:
+        clauses.append("outcome = %s")
+        params.append(outcome)
+    if from_ts is not None:
+        clauses.append("signal_ts >= %s")
+        params.append(from_ts)
+    if to_ts is not None:
+        clauses.append("signal_ts <= %s")
+        params.append(to_ts)
+
+    sql = "SELECT COUNT(*) AS n FROM virtual_trades WHERE " + " AND ".join(clauses)
+
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, tuple(params))
+            row = cur.fetchone()
+            return int(row["n"]) if row else 0
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # real_trades table
 # ─────────────────────────────────────────────────────────────────────────────
