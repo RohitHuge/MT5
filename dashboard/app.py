@@ -75,21 +75,14 @@ logging.basicConfig(
 # App + template setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="MT5 Dashboard", version="2.0.0", lifespan=_lifespan)
-
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
 MT5_BRIDGE_URL = os.getenv("MT5_BRIDGE_URL", "http://host.docker.internal:8000")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 
-# Strategy service base URLs (internal Docker network) — used by /api/backtest/run
-STRATEGY_URLS: dict[str, str] = {
-    "ema-scalp":     os.getenv("STRATEGY_EMA_URL", "http://strategy-ema-scalp:8080"),
-    "ob-fvg":        os.getenv("STRATEGY_OB_URL",  "http://strategy-ob-fvg:8080"),
-    "liq-sweep":     os.getenv("STRATEGY_LIQ_URL", "http://strategy-liq-sweep:8080"),
-    "oco-dual-stop": os.getenv("STRATEGY_OCO_URL", "http://strategy-oco:8080"),
-}
-
+# Display names for strategies seeded into DB on startup.
+# Adding a new strategy: add one entry here + a docker-compose service named
+# "strategy-{name}" on port 8080. No other dashboard changes needed.
 STRATEGY_DISPLAY_NAMES: dict[str, str] = {
     "ema-scalp":     "EMA Scalp",
     "ob-fvg":        "OB+FVG",
@@ -100,11 +93,12 @@ STRATEGY_DISPLAY_NAMES: dict[str, str] = {
 
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """Seed every strategy from STRATEGY_URLS into the DB on startup.
+    """Seed every known strategy into the DB on startup.
 
-    This guarantees the sidebar and Backtest dropdown show all known strategies
-    even when a strategy container fails to self-register via HTTP (DNS not ready,
-    startup race, etc.). The DB upsert never overwrites an existing strategy's mode.
+    Strategy containers register themselves via HTTP, but DNS is not always
+    ready at container start time. Seeding here (same process, same DB) ensures
+    the sidebar and Backtest dropdown are populated immediately.
+    Mode is never overwritten — an existing strategy keeps its current mode.
     """
     for name, display in STRATEGY_DISPLAY_NAMES.items():
         try:
@@ -113,6 +107,9 @@ async def _lifespan(app: FastAPI):
         except Exception as exc:
             log.warning("Could not seed strategy %s: %s", name, exc)
     yield
+
+
+app = FastAPI(title="MT5 Dashboard", version="2.0.0", lifespan=_lifespan)
 
 
 def _bridge_ws_base() -> str:
@@ -799,14 +796,18 @@ def _compute_backtest_metrics(trades: list[dict]) -> dict:
 
 @app.post("/api/backtest/run")
 async def backtest_run(body: BacktestRequest):
-    """Run a backtest on the matching strategy service and persist the result."""
-    base_url = STRATEGY_URLS.get(body.strategy)
-    if not base_url:
+    """Run a backtest on the matching strategy service and persist the result.
+
+    Strategy service URL is derived by convention: http://strategy-{name}:8080.
+    Adding a new strategy requires only a docker-compose service named
+    "strategy-{name}" — no code change here.
+    """
+    if not body.strategy or "/" in body.strategy:
         return JSONResponse(
             status_code=400,
-            content={"error": f"unknown strategy {body.strategy!r}; expected one of "
-                              f"{sorted(STRATEGY_URLS)}", "ok": False},
+            content={"error": f"invalid strategy name {body.strategy!r}", "ok": False},
         )
+    base_url = f"http://strategy-{body.strategy}:8080"
 
     candles = _fetch_bulk_candles(body.symbol, body.timeframe, body.from_date, body.to_date)
     if not candles:
