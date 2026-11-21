@@ -228,6 +228,9 @@ services:
       POSTGRES_URL: ${POSTGRES_URL}
       REDIS_URL: ${REDIS_URL}
       MT5_BRIDGE_URL: ${MT5_BRIDGE_URL}
+      STRATEGY_EMA_URL: http://strategy-ema-scalp:8080
+      STRATEGY_OB_URL: http://strategy-ob-fvg:8080
+      STRATEGY_LIQ_URL: http://strategy-liq-sweep:8080
       LOG_LEVEL: ${LOG_LEVEL}
     depends_on:
       postgres:

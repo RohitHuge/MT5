@@ -116,3 +116,48 @@ CREATE TABLE IF NOT EXISTS daily_summary (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ds_strategy_date ON daily_summary (strategy, date);
+
+
+-- -------------------------------------------------------------------------
+-- backtest_runs
+-- One row per POST /api/backtest/run invocation. Written by the dashboard
+-- after a strategy service returns its simulated trade list; read by the
+-- Backtesting page history tab.
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id            SERIAL PRIMARY KEY,
+    strategy      TEXT NOT NULL,
+    symbol        TEXT NOT NULL DEFAULT 'XAUUSD',
+    timeframe     TEXT NOT NULL DEFAULT 'M5',
+    from_date     DATE NOT NULL,
+    to_date       DATE NOT NULL,
+    params        JSONB NOT NULL DEFAULT '{}',   -- strategy-specific overrides
+    total_trades  INT,
+    winners       INT,
+    win_rate      FLOAT,                         -- winners / total_trades
+    net_pnl       FLOAT,
+    max_drawdown  FLOAT,
+    profit_factor FLOAT,
+    sharpe        FLOAT,
+    trade_log     JSONB,                         -- full trade list from the strategy
+    run_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bt_strategy_run_at ON backtest_runs (strategy, run_at DESC);
+
+
+-- -------------------------------------------------------------------------
+-- strategy_snapshots
+-- Indicator state captured after each strategy evaluation (EMA/RSI values,
+-- OB/FVG zones, pivots). The dashboard overlays these on the candle chart.
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS strategy_snapshots (
+    id          BIGSERIAL PRIMARY KEY,
+    strategy    TEXT NOT NULL,
+    ts          TIMESTAMPTZ NOT NULL,            -- candle timestamp of the snapshot
+    indicators  JSONB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_snaps_strategy_ts ON strategy_snapshots (strategy, ts DESC);
+-- Prune rows older than 7 days (kept lean — only used for live chart overlays)
+CREATE INDEX IF NOT EXISTS idx_snaps_ts ON strategy_snapshots (ts);

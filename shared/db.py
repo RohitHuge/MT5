@@ -14,10 +14,12 @@ as TIMESTAMPTZ so they round-trip correctly.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 import psycopg2
@@ -368,3 +370,166 @@ def get_equity_curve(strategy: str, days: int = 30, is_shadow: bool = True) -> l
                 (strategy, is_shadow, days),
             )
             return [dict(r) for r in cur.fetchall()]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# backtest_runs table
+# ─────────────────────────────────────────────────────────────────────────────
+
+_BACKTEST_METRIC_COLUMNS = (
+    "total_trades",
+    "winners",
+    "win_rate",
+    "net_pnl",
+    "max_drawdown",
+    "profit_factor",
+    "sharpe",
+)
+
+
+def _jsonable(value: Any) -> Any:
+    """Coerce datetimes / dates / Decimals (and nested containers) to JSON-safe types."""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def save_backtest_run(
+    strategy: str,
+    symbol: str,
+    timeframe: str,
+    from_date: str,
+    to_date: str,
+    params: dict,
+    metrics: dict,
+    trade_log: list | None,
+) -> int:
+    """Insert a backtest run row and return the new id.
+
+    *metrics* keys map onto the metric columns; missing keys are stored as NULL.
+    """
+    values = {col: metrics.get(col) for col in _BACKTEST_METRIC_COLUMNS}
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO backtest_runs
+                    (strategy, symbol, timeframe, from_date, to_date, params,
+                     total_trades, winners, win_rate, net_pnl, max_drawdown,
+                     profit_factor, sharpe, trade_log)
+                VALUES
+                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    strategy, symbol, timeframe, from_date, to_date,
+                    json.dumps(_jsonable(params or {})),
+                    values["total_trades"], values["winners"], values["win_rate"],
+                    values["net_pnl"], values["max_drawdown"],
+                    values["profit_factor"], values["sharpe"],
+                    json.dumps(_jsonable(trade_log or [])),
+                ),
+            )
+            return cur.fetchone()[0]
+
+
+def get_backtest_history(strategy: str | None = None, limit: int = 20) -> list[dict]:
+    """Return backtest runs newest first, optionally filtered by strategy."""
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if strategy:
+                cur.execute(
+                    "SELECT * FROM backtest_runs WHERE strategy = %s "
+                    "ORDER BY run_at DESC LIMIT %s",
+                    (strategy, limit),
+                )
+            else:
+                cur.execute(
+                    "SELECT * FROM backtest_runs ORDER BY run_at DESC LIMIT %s",
+                    (limit,),
+                )
+            return [_jsonable(dict(r)) for r in cur.fetchall()]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# strategy_snapshots table
+# ─────────────────────────────────────────────────────────────────────────────
+
+def save_snapshot(strategy: str, ts: datetime, indicators: dict) -> None:
+    """Store one indicator snapshot for a strategy."""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO strategy_snapshots (strategy, ts, indicators)
+                VALUES (%s, %s, %s)
+                """,
+                (strategy, ts, json.dumps(_jsonable(indicators or {}))),
+            )
+
+
+def get_snapshots(strategy: str, limit: int = 200) -> list[dict]:
+    """Return the most recent snapshots for a strategy, newest first."""
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT * FROM strategy_snapshots
+                WHERE strategy = %s
+                ORDER BY ts DESC
+                LIMIT %s
+                """,
+                (strategy, limit),
+            )
+            return [_jsonable(dict(r)) for r in cur.fetchall()]
+
+
+def prune_old_snapshots(days: int = 7) -> None:
+    """Delete snapshots older than N days (keeps the overlay table lean)."""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM strategy_snapshots WHERE ts < NOW() - INTERVAL '%s days'",
+                (days,),
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# strategies self-registration
+# ─────────────────────────────────────────────────────────────────────────────
+
+def register_strategy(
+    name: str,
+    display_name: str,
+    description: str = "",
+    mode: str = "shadow",
+) -> str:
+    """Upsert a strategy row from a strategy service's startup call.
+
+    mode is only applied when the row is first created — an existing strategy's
+    mode is never overwritten (promotion is a dashboard/DB decision, not the
+    strategy's). Returns the mode currently stored in the DB.
+    """
+    if mode not in ("live", "shadow", "off"):
+        raise ValueError(f"Invalid mode {mode!r}; must be live, shadow, or off")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO strategies (name, display_name, mode, description)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (name) DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
+                    description  = EXCLUDED.description,
+                    updated_at   = NOW()
+                RETURNING mode
+                """,
+                (name, display_name, mode, description),
+            )
+            return cur.fetchone()["mode"]

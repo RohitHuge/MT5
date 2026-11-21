@@ -253,7 +253,10 @@ async def candles(symbol: str, timeframe: str, count: int = 500):
             status_code=422,
             detail=f"Unknown timeframe '{timeframe}'. Valid: {', '.join(sorted(VALID_TIMEFRAMES))}",
         )
-    count = min(count, 5000)
+    # NOTE: the MQL5 EA (experts/MT5Bridge.mq5, HandleCandles) independently clamps
+    # count to 5000; lifting that ceiling needs a recompile of the EA. Bulk pagination
+    # in the dashboard still works correctly at 5000-chunk granularity.
+    count = min(count, 50000)
     return await call_ea("GET", f"/candles?symbol={symbol}&timeframe={tf}&count={count}")
 
 
