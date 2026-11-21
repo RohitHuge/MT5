@@ -34,7 +34,8 @@ npm run lint    # oxlint
 src/
   components/        Layout shell, status badge, account summary, mode toggle,
                      strategy badge, range selector, shared state views
-  components/charts/ Recharts wrappers (equity curve, daily P&L, metrics row)
+  components/charts/ lightweight-charts CandleChart + Recharts wrappers
+                     (equity curve, daily P&L, metrics row)
   hooks/             TanStack Query data hooks + signal WebSocket feed
   lib/               api client, formatting, chart colors, error helpers
   pages/             Overview · Live Trading · Strategy Detail · Shadow ·
@@ -47,9 +48,9 @@ src/
 
 | Route | Page |
 |---|---|
-| `/` | Overview |
-| `/live` | Live Trading |
-| `/strategy/:name` | Strategy Detail |
-| `/shadow` | Shadow Testing |
-| `/backtest` | Backtesting |
-| `/signals` | Signal Feed |
+| `/` | Overview — strategy grid, weekly P&L, account snapshot |
+| `/live` | Live Trading — candle chart, bot control, positions, manual order |
+| `/strategy/:name` | Strategy Detail — indicator overlays, metrics, signal history |
+| `/shadow` | Shadow Testing — comparison table, equity curves |
+| `/backtest` | Backtesting — run config, metrics, trade log, history |
+| `/signals` | Signal Feed — live WebSocket stream |
