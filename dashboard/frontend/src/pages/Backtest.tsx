@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { Download, FlaskConical, Loader2, Play } from 'lucide-react'
@@ -47,7 +47,16 @@ const PARAM_FIELDS: Record<string, { key: string; label: string; step: string }[
     { key: 'pivot_left', label: 'Pivot left', step: '1' },
     { key: 'pivot_right', label: 'Pivot right', step: '1' },
   ],
+  'oco-dual-stop': [
+    { key: 'distance_pips', label: 'Distance (pips)', step: '1' },
+    { key: 'profit_target_pips', label: 'Profit target (pips)', step: '1' },
+    { key: 'max_loss_pips', label: 'Max loss (pips)', step: '1' },
+    { key: 'lots', label: 'Lot size', step: '0.01' },
+  ],
 }
+
+/** Strategies that require M1 candles for meaningful backtest results. */
+const M1_STRATEGIES = new Set(['oco-dual-stop'])
 
 const inputClass =
   'w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-xs text-slate-200 outline-none transition-colors focus:border-accent/60'
@@ -387,6 +396,11 @@ export function Backtest() {
     if (list.length === 0) return ''
     return list.some((entry) => entry.name === strategy) ? strategy : list[0].name
   }, [strategies.data, strategy])
+
+  // Auto-switch to M1 for strategies that need tick-resolution candles
+  useEffect(() => {
+    if (M1_STRATEGIES.has(selected)) setTimeframe('M1')
+  }, [selected])
 
   const fields = PARAM_FIELDS[selected] ?? []
 

@@ -75,7 +75,7 @@ logging.basicConfig(
 # App + template setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="MT5 Dashboard", version="2.0.0")
+app = FastAPI(title="MT5 Dashboard", version="2.0.0", lifespan=_lifespan)
 
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
@@ -89,6 +89,30 @@ STRATEGY_URLS: dict[str, str] = {
     "liq-sweep":     os.getenv("STRATEGY_LIQ_URL", "http://strategy-liq-sweep:8080"),
     "oco-dual-stop": os.getenv("STRATEGY_OCO_URL", "http://strategy-oco:8080"),
 }
+
+STRATEGY_DISPLAY_NAMES: dict[str, str] = {
+    "ema-scalp":     "EMA Scalp",
+    "ob-fvg":        "OB+FVG",
+    "liq-sweep":     "Liq Sweep",
+    "oco-dual-stop": "OCO Dual Stop",
+}
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Seed every strategy from STRATEGY_URLS into the DB on startup.
+
+    This guarantees the sidebar and Backtest dropdown show all known strategies
+    even when a strategy container fails to self-register via HTTP (DNS not ready,
+    startup race, etc.). The DB upsert never overwrites an existing strategy's mode.
+    """
+    for name, display in STRATEGY_DISPLAY_NAMES.items():
+        try:
+            db.register_strategy(name, display, "", "shadow")
+            log.info("Seeded strategy into DB: %s", name)
+        except Exception as exc:
+            log.warning("Could not seed strategy %s: %s", name, exc)
+    yield
 
 
 def _bridge_ws_base() -> str:
