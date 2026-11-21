@@ -28,7 +28,10 @@ const TIMEFRAMES = ['M1', 'M5', 'M15', 'H1'] as const
 type Timeframe = (typeof TIMEFRAMES)[number]
 
 /** Per-strategy parameter overrides rendered in the config panel. */
-const PARAM_FIELDS: Record<string, { key: string; label: string; step: string }[]> = {
+const PARAM_FIELDS: Record<
+  string,
+  { key: string; label: string; step: string; placeholder?: string; hint?: string }[]
+> = {
   'ema-scalp': [
     { key: 'risk_pct', label: 'Risk %', step: '0.001' },
     { key: 'rr_target', label: 'RR target', step: '0.1' },
@@ -48,12 +51,45 @@ const PARAM_FIELDS: Record<string, { key: string; label: string; step: string }[
     { key: 'pivot_right', label: 'Pivot right', step: '1' },
   ],
   'oco-dual-stop': [
-    { key: 'distance_pips', label: 'Distance (pips)', step: '1' },
-    { key: 'profit_target_pips', label: 'Profit target (pips)', step: '1' },
-    { key: 'max_loss_pips', label: 'Max loss (pips)', step: '1' },
-    { key: 'lots', label: 'Lot size', step: '0.01' },
+    {
+      key: 'distance_pips',
+      label: 'Stop gap (pips)',
+      step: '1',
+      placeholder: '50',
+      hint: 'Pips above price → Buy Stop · pips below → Sell Stop. Whichever triggers first becomes the live trade; the other is cancelled.',
+    },
+    {
+      key: 'profit_target_pips',
+      label: 'Take profit — TP (pips)',
+      step: '1',
+      placeholder: '50',
+      hint: 'TP is a limit order placed at entry ± this distance. Closes the trade in profit when hit.',
+    },
+    {
+      key: 'max_loss_pips',
+      label: 'Stop loss — SL (pips)',
+      step: '1',
+      placeholder: '150',
+      hint: 'SL is a stop order at entry ± this distance. Closes the trade to cap the loss when hit.',
+    },
+    {
+      key: 'lots',
+      label: 'Lot size',
+      step: '0.01',
+      placeholder: '0.01',
+      hint: '1 lot = 100 000 units. For XAUUSD micro-accounts use 0.01.',
+    },
   ],
 }
+
+/** Quick date range presets — sets FROM = today − offset, TO = today. */
+const DATE_PRESETS = [
+  { label: '1D',  days: 1 },
+  { label: '3D',  days: 3 },
+  { label: '1W',  days: 7 },
+  { label: '1M',  months: 1 },
+  { label: '3M',  months: 3 },
+] as const
 
 /** Strategies that require M1 candles for meaningful backtest results. */
 const M1_STRATEGIES = new Set(['oco-dual-stop'])
@@ -71,6 +107,17 @@ function monthAgoIso(): string {
   const date = new Date()
   date.setMonth(date.getMonth() - 1)
   return date.toISOString().slice(0, 10)
+}
+
+function applyPreset(preset: (typeof DATE_PRESETS)[number]): { from: string; to: string } {
+  const to = new Date()
+  const from = new Date()
+  if ('months' in preset) {
+    from.setMonth(from.getMonth() - preset.months)
+  } else {
+    from.setDate(from.getDate() - preset.days)
+  }
+  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }
 }
 
 /** `GET /api/backtest/history` */
@@ -548,25 +595,43 @@ export function Backtest() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <label className="flex flex-col gap-1">
-                  <span className={labelClass}>From</span>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    onChange={(event) => setFromDate(event.target.value)}
-                    className={inputClass}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className={labelClass}>To</span>
-                  <input
-                    type="date"
-                    value={toDate}
-                    onChange={(event) => setToDate(event.target.value)}
-                    className={inputClass}
-                  />
-                </label>
+              <div className="flex flex-col gap-1.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className={labelClass}>From</span>
+                    <input
+                      type="date"
+                      value={fromDate}
+                      onChange={(event) => setFromDate(event.target.value)}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={labelClass}>To</span>
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={(event) => setToDate(event.target.value)}
+                      className={inputClass}
+                    />
+                  </label>
+                </div>
+                <div className="flex gap-1">
+                  {DATE_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        const { from, to } = applyPreset(preset)
+                        setFromDate(from)
+                        setToDate(to)
+                      }}
+                      className="flex-1 rounded border border-border px-1 py-0.5 text-[10px] font-medium text-muted transition-colors hover:border-accent/50 hover:bg-accent/10 hover:text-accent"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {fields.length > 0 && (
@@ -575,7 +640,13 @@ export function Backtest() {
                   <div className="grid grid-cols-2 gap-2">
                     {fields.map((field) => (
                       <label key={field.key} className="flex flex-col gap-1">
-                        <span className="text-[10px] text-muted">{field.label}</span>
+                        <span
+                          className="text-[10px] text-muted"
+                          title={field.hint}
+                          style={field.hint ? { cursor: 'help', textDecorationLine: 'underline', textDecorationStyle: 'dotted' } : undefined}
+                        >
+                          {field.label}
+                        </span>
                         <input
                           type="number"
                           step={field.step}
@@ -583,7 +654,7 @@ export function Backtest() {
                           onChange={(event) =>
                             setParams((prev) => ({ ...prev, [field.key]: event.target.value }))
                           }
-                          placeholder="default"
+                          placeholder={field.placeholder ?? 'default'}
                           className={inputClass}
                         />
                       </label>
