@@ -1,16 +1,26 @@
 """Dashboard service — FastAPI backend for the MT5 multi-strategy platform.
 
 Endpoints:
-  GET  /                                       renders index.html
-  GET  /strategy/{name}                        renders strategy.html
+  GET  /                                       React SPA (dashboard/frontend/dist)
   GET  /api/health                             DB + Redis + bridge connectivity
   GET  /api/strategies                         all strategies + today's P&L
   GET  /api/strategy/{name}/performance        daily rows (default last 30 days)
   GET  /api/strategy/{name}/equity_curve       cumulative equity series
+  GET  /api/strategy/{name}/snapshots          indicator snapshots (chart overlays)
   GET  /api/compare                            all strategies side-by-side
   GET  /api/live_positions                     open real + shadow positions
   POST /api/strategy/{name}/set_mode           promote / demote strategy
+  POST /api/strategies/register                strategy services self-register
+  GET  /api/account                            MT5 account summary passthrough
+  GET  /api/candles                            proxy bridge /candles
+  GET  /api/candles/bulk                       paginated bridge candles for a date range
+  GET  /api/symbol/{symbol}                    proxy bridge /symbol/{symbol}
+  POST /api/order                              proxy bridge /order
+  POST /api/close/{ticket}                     proxy bridge /close/{ticket}
+  POST /api/backtest/run                       run a backtest on a strategy service
+  GET  /api/backtest/history                   past backtest runs
   WS   /ws/signals                             live signal feed (Redis pubsub)
+  WS   /ws/candles                             proxy bridge /ws/candles
 
 All DB calls go through shared.db which owns the connection pool.
 Bridge calls are plain requests.get() with a short timeout — if the bridge
@@ -20,20 +30,31 @@ crashing, so the dashboard stays usable even when MT5 is offline.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import math
 import os
 import threading
 from datetime import date, datetime, timezone, timedelta
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
 import redis as redis_lib
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+# websockets ships as a transitive dep of uvicorn[standard]; a missing install
+# only disables the /ws/candles proxy, not the whole dashboard.
+try:
+    import websockets
+except ImportError:  # pragma: no cover
+    websockets = None  # type: ignore[assignment]
 
 # shared/ lives one level up from dashboard/ inside the container (COPY shared/ /app/shared/)
 import sys
@@ -54,11 +75,29 @@ logging.basicConfig(
 # App + template setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="MT5 Dashboard", version="1.0.0")
-templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+app = FastAPI(title="MT5 Dashboard", version="2.0.0")
+
+FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
 MT5_BRIDGE_URL = os.getenv("MT5_BRIDGE_URL", "http://host.docker.internal:8000")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
+
+# Strategy service base URLs (internal Docker network) — used by /api/backtest/run
+STRATEGY_URLS: dict[str, str] = {
+    "ema-scalp": os.getenv("STRATEGY_EMA_URL", "http://strategy-ema-scalp:8080"),
+    "ob-fvg":    os.getenv("STRATEGY_OB_URL",  "http://strategy-ob-fvg:8080"),
+    "liq-sweep": os.getenv("STRATEGY_LIQ_URL", "http://strategy-liq-sweep:8080"),
+}
+
+
+def _bridge_ws_base() -> str:
+    """Derive the bridge WebSocket origin from MT5_BRIDGE_URL (http→ws, https→wss)."""
+    base = MT5_BRIDGE_URL.rstrip("/")
+    if base.startswith("https://"):
+        return "wss://" + base[len("https://"):]
+    if base.startswith("http://"):
+        return "ws://" + base[len("http://"):]
+    return "ws://" + base
 
 
 def _bridge_get(path: str, timeout: float = 3.0) -> dict | list | None:
@@ -74,20 +113,6 @@ def _bridge_get(path: str, timeout: float = 3.0) -> dict | list | None:
 
 def _redis_client() -> redis_lib.Redis:
     return redis_lib.from_url(REDIS_URL, decode_responses=True)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HTML pages
-# ─────────────────────────────────────────────────────────────────────────────
-
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
-@app.get("/strategy/{name}", response_class=HTMLResponse)
-async def strategy_page(request: Request, name: str):
-    return templates.TemplateResponse("strategy.html", {"request": request, "strategy_name": name})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -471,6 +496,425 @@ async def account():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Bridge proxies (candles / symbol / order / close)
+#
+# The React SPA talks to this service only; these re-expose the bridge on the
+# single dashboard origin.  Every one degrades instead of 500-ing when the
+# bridge is offline (it lives on the Windows host and is frequently down).
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/candles")
+async def api_candles(symbol: str = "XAUUSD", timeframe: str = "M5", count: int = 500):
+    """Proxy bridge /candles. Returns [] when the bridge is unreachable."""
+    params = urlencode({"symbol": symbol, "timeframe": timeframe, "count": count})
+    data = _bridge_get(f"/candles?{params}")
+    if data is None:
+        return []
+    if isinstance(data, dict):
+        return data.get("candles") or []
+    return data
+
+
+_BULK_CHUNK = 5000
+_BULK_MAX_COUNT = 50000     # largest single request we will ever make to the bridge
+_BULK_MAX_CHUNKS = 200      # defensive cap so a bad range can't loop forever
+
+
+def _parse_ts(value: Any) -> datetime | None:
+    """Parse a candle timestamp (ISO string or datetime) into an aware datetime."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _parse_bound(raw: str, *, end_of_day: bool) -> datetime | None:
+    """Accept either an ISO date ("2025-01-01") or a full ISO datetime."""
+    if not raw:
+        return None
+    raw = raw.strip()
+    if "T" in raw or " " in raw:
+        return _parse_ts(raw)
+    try:
+        d = date.fromisoformat(raw[:10])
+    except ValueError:
+        return _parse_ts(raw)
+    if end_of_day:
+        return datetime(d.year, d.month, d.day, 23, 59, 59, 999999, tzinfo=timezone.utc)
+    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+
+
+def _shape_candle(raw: dict, symbol: str, timeframe: str) -> dict:
+    """Normalise a bridge candle to the {symbol, timeframe, ...OHLC} contract."""
+
+    def _float(key: str) -> float:
+        try:
+            return float(raw.get(key))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _int(key: str) -> int:
+        try:
+            return int(raw.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return {
+        "symbol": raw.get("symbol") or symbol,
+        "timeframe": raw.get("timeframe") or timeframe,
+        "timestamp": raw.get("timestamp"),
+        "open": _float("open"),
+        "high": _float("high"),
+        "low": _float("low"),
+        "close": _float("close"),
+        "volume": _int("volume"),
+        "spread": _int("spread"),
+    }
+
+
+def _fetch_bulk_candles(symbol: str, timeframe: str, from_iso: str, to_iso: str) -> list[dict]:
+    """Page backwards through bridge /candles until *from_iso* is covered.
+
+    The bridge exposes no offset or end-date parameter, so "paging backwards"
+    means re-requesting with a larger count each round (5000, 10000, … capped
+    at _BULK_MAX_COUNT). We stop as soon as the oldest bar returned is at or
+    before the requested start, the bridge stops yielding older data, or the
+    chunk cap is hit.
+    """
+    lo = _parse_bound(from_iso, end_of_day=False)
+    hi = _parse_bound(to_iso, end_of_day=True)
+    if lo is None or hi is None or hi < lo:
+        log.warning("bulk candles: bad range %r → %r", from_iso, to_iso)
+        return []
+
+    collected: dict[datetime, dict] = {}
+    prev_oldest: datetime | None = None
+
+    for chunk in range(1, _BULK_MAX_CHUNKS + 1):
+        count = min(_BULK_CHUNK * chunk, _BULK_MAX_COUNT)
+        params = urlencode({"symbol": symbol, "timeframe": timeframe, "count": count})
+        data = _bridge_get(f"/candles?{params}", timeout=30.0)
+        if not data:
+            break
+        batch = data if isinstance(data, list) else (data.get("candles") or [])
+        if not batch:
+            break
+
+        parsed: list[tuple[datetime, dict]] = []
+        for c in batch:
+            ts = _parse_ts(c.get("timestamp"))
+            if ts is not None:
+                parsed.append((ts, c))
+                collected[ts] = c
+        if not parsed:
+            break
+
+        parsed.sort(key=lambda p: p[0])
+        oldest = parsed[0][0]
+        if oldest <= lo:
+            break                       # requested range fully covered
+        if prev_oldest is not None and oldest >= prev_oldest:
+            break                       # no older data available (EA 5000-bar clamp)
+        if len(batch) < count or count >= _BULK_MAX_COUNT:
+            break                       # bridge can't give us anything older
+        prev_oldest = oldest
+
+    in_range = [(ts, c) for ts, c in collected.items() if lo <= ts <= hi]
+    in_range.sort(key=lambda p: p[0])
+    return [_shape_candle(c, symbol, timeframe) for _, c in in_range]
+
+
+@app.get("/api/candles/bulk")
+async def api_candles_bulk(symbol: str, timeframe: str, from_iso: str, to_iso: str):
+    """All candles between from_iso and to_iso (bulk-paged from the bridge)."""
+    candles = _fetch_bulk_candles(symbol, timeframe, from_iso, to_iso)
+    if not candles:
+        log.warning("bulk candles: empty result for %s %s %s→%s "
+                    "(bridge offline or no data in range)", symbol, timeframe, from_iso, to_iso)
+    return candles
+
+
+@app.get("/api/symbol/{symbol}")
+async def api_symbol(symbol: str):
+    """Proxy bridge /symbol/{symbol} (contract size, digits, spread, …)."""
+    data = _bridge_get(f"/symbol/{quote(symbol, safe='')}")
+    if data is None:
+        return {"error": f"bridge unreachable for {symbol}", "symbol": symbol, "bridge_live": False}
+    if isinstance(data, dict):
+        data["bridge_live"] = True
+    return data
+
+
+@app.post("/api/order")
+async def api_order(body: dict):
+    """Proxy bridge /order — forwards the JSON body unchanged."""
+    try:
+        resp = requests.post(f"{MT5_BRIDGE_URL}/order", json=body, timeout=15.0)
+    except Exception as exc:
+        log.warning("Bridge order failed: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={"error": f"bridge unreachable: {exc}", "bridge_live": False, "ok": False},
+        )
+
+    if resp.status_code >= 400:
+        detail: Any = resp.text
+        with contextlib.suppress(Exception):
+            payload = resp.json()
+            detail = payload.get("detail") or payload.get("error") or detail
+        status = 503 if resp.status_code >= 500 else resp.status_code
+        return JSONResponse(
+            status_code=status,
+            content={"error": detail, "bridge_live": resp.status_code < 500, "ok": False},
+        )
+
+    with contextlib.suppress(Exception):
+        data = resp.json()
+        if isinstance(data, dict):
+            data.setdefault("bridge_live", True)
+        return data
+    return {"ok": True, "bridge_live": True}
+
+
+@app.post("/api/close/{ticket}")
+async def api_close(ticket: int):
+    """Proxy bridge /close/{ticket} — closes an open position."""
+    try:
+        resp = requests.post(f"{MT5_BRIDGE_URL}/close/{ticket}", timeout=15.0)
+    except Exception as exc:
+        log.warning("Bridge close %s failed: %s", ticket, exc)
+        return JSONResponse(
+            status_code=503,
+            content={"error": f"bridge unreachable: {exc}", "bridge_live": False,
+                     "ticket": ticket, "ok": False},
+        )
+
+    if resp.status_code >= 400:
+        detail: Any = resp.text
+        with contextlib.suppress(Exception):
+            payload = resp.json()
+            detail = payload.get("detail") or payload.get("error") or detail
+        status = 503 if resp.status_code >= 500 else resp.status_code
+        return JSONResponse(
+            status_code=status,
+            content={"error": detail, "bridge_live": resp.status_code < 500,
+                     "ticket": ticket, "ok": False},
+        )
+
+    with contextlib.suppress(Exception):
+        data = resp.json()
+        if isinstance(data, dict):
+            data.setdefault("bridge_live", True)
+        return data
+    return {"ok": True, "ticket": ticket, "bridge_live": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backtesting
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BacktestRequest(BaseModel):
+    strategy: str
+    symbol: str = "XAUUSD"
+    timeframe: str = "M5"
+    from_date: str
+    to_date: str
+    params: dict = Field(default_factory=dict)
+
+
+def _compute_backtest_metrics(trades: list[dict]) -> dict:
+    """Aggregate a simulated trade list into the backtest_runs metric set.
+
+    net_pnl is treated as the per-trade return series: max_drawdown is the
+    largest peak-to-trough fall of the cumulative P&L curve, and Sharpe is the
+    mean/std of the per-trade P&L (non-annualised). win_rate is a 0–1 fraction,
+    matching daily_summary.win_rate.
+    """
+    pnls: list[float] = []
+    for t in trades:
+        try:
+            pnls.append(float(t.get("net_pnl") or 0.0))
+        except (TypeError, ValueError):
+            pnls.append(0.0)
+
+    total = len(pnls)
+    winners = sum(1 for p in pnls if p > 0)
+    gross_win = sum(p for p in pnls if p > 0)
+    gross_loss = abs(sum(p for p in pnls if p < 0))
+
+    equity = peak = max_dd = 0.0
+    for p in pnls:
+        equity += p
+        peak = max(peak, equity)
+        max_dd = max(max_dd, peak - equity)
+
+    sharpe: float | None = None
+    if total > 1:
+        mean = sum(pnls) / total
+        variance = sum((p - mean) ** 2 for p in pnls) / (total - 1)
+        std = math.sqrt(variance)
+        if std > 0:
+            sharpe = round(mean / std, 3)
+
+    return {
+        "total_trades": total,
+        "winners": winners,
+        "win_rate": round(winners / total, 4) if total else 0.0,
+        "net_pnl": round(sum(pnls), 2),
+        "max_drawdown": round(max_dd, 2),
+        "profit_factor": round(gross_win / gross_loss, 3) if gross_loss > 0 else None,
+        "sharpe": sharpe,
+    }
+
+
+@app.post("/api/backtest/run")
+async def backtest_run(body: BacktestRequest):
+    """Run a backtest on the matching strategy service and persist the result."""
+    base_url = STRATEGY_URLS.get(body.strategy)
+    if not base_url:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"unknown strategy {body.strategy!r}; expected one of "
+                              f"{sorted(STRATEGY_URLS)}", "ok": False},
+        )
+
+    candles = _fetch_bulk_candles(body.symbol, body.timeframe, body.from_date, body.to_date)
+    if not candles:
+        return {
+            "error": "no candles available for the requested range (bridge offline or empty range)",
+            "ok": False,
+            "bridge_live": False,
+            "strategy": body.strategy,
+            "symbol": body.symbol,
+            "timeframe": body.timeframe,
+            "from_date": body.from_date,
+            "to_date": body.to_date,
+            "trade_log": [],
+        }
+
+    try:
+        resp = requests.post(
+            f"{base_url.rstrip('/')}/backtest",
+            json={"candles": candles, "params": body.params},
+            timeout=180.0,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        log.warning("Backtest call to %s failed: %s", base_url, exc)
+        return {
+            "error": f"strategy service unreachable: {exc}",
+            "ok": False,
+            "strategy": body.strategy,
+            "symbol": body.symbol,
+            "timeframe": body.timeframe,
+            "from_date": body.from_date,
+            "to_date": body.to_date,
+            "candles_used": len(candles),
+            "trade_log": [],
+        }
+
+    trades = payload.get("trades") if isinstance(payload, dict) else payload
+    if not isinstance(trades, list):
+        trades = []
+    if isinstance(payload, dict) and payload.get("error"):
+        return {
+            "error": payload["error"],
+            "ok": False,
+            "strategy": body.strategy,
+            "symbol": body.symbol,
+            "timeframe": body.timeframe,
+            "candles_used": len(candles),
+            "trade_log": trades,
+        }
+
+    metrics = _compute_backtest_metrics(trades)
+
+    run_id: int | None = None
+    try:
+        run_id = db.save_backtest_run(
+            body.strategy, body.symbol, body.timeframe,
+            body.from_date[:10], body.to_date[:10],
+            body.params, metrics, trades,
+        )
+    except Exception as exc:
+        log.warning("Could not persist backtest run: %s", exc)
+
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "strategy": body.strategy,
+        "symbol": body.symbol,
+        "timeframe": body.timeframe,
+        "from_date": body.from_date,
+        "to_date": body.to_date,
+        "candles_used": len(candles),
+        "metrics": metrics,
+        **metrics,
+        "trade_log": trades,
+    }
+
+
+@app.get("/api/backtest/history")
+async def backtest_history(strategy: str | None = None, limit: int = 20):
+    """Past backtest runs, newest first. Returns [] when the DB is unavailable."""
+    try:
+        return db.get_backtest_history(strategy=strategy, limit=limit)
+    except Exception as exc:
+        log.warning("backtest history query failed: %s", exc)
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Strategy snapshots (indicator overlays)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/strategy/{name}/snapshots")
+async def strategy_snapshots(name: str, limit: int = 200):
+    """Last N indicator snapshots for a strategy. Returns [] when unavailable."""
+    try:
+        return db.get_snapshots(name, limit=limit)
+    except Exception as exc:
+        log.warning("snapshot query failed for %s: %s", name, exc)
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Strategy self-registration
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    name: str
+    display_name: str
+    description: str = ""
+    mode: str = "shadow"
+
+
+@app.post("/api/strategies/register")
+async def strategies_register(body: RegisterRequest):
+    """Upsert a strategy row from a strategy service's startup call.
+
+    Mode is preserved for existing rows — a strategy can never promote itself.
+    """
+    try:
+        current_mode = db.register_strategy(
+            body.name, body.display_name, body.description, body.mode
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        log.warning("register_strategy failed for %s: %s", body.name, exc)
+        return {"registered": False, "mode": body.mode, "error": str(exc)}
+
+    return {"registered": True, "mode": current_mode}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # WebSocket — live signal feed
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -564,3 +1008,105 @@ async def ws_signals(websocket: WebSocket):
     finally:
         stop_event.set()
         log.debug("ws_signals: client disconnected, pubsub thread signalled to stop")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WebSocket — candle stream proxy (browser ← dashboard ← mt5-bridge)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.websocket("/ws/candles")
+async def ws_candles_proxy(websocket: WebSocket):
+    """Relay the bridge's candle WebSocket to the browser.
+
+    symbol/timeframe query params are forwarded as-is. If the bridge cannot be
+    reached the client socket is closed cleanly instead of raising.
+    """
+    await websocket.accept()
+
+    forwarded = {k: v for k, v in websocket.query_params.items()
+                 if k in ("symbol", "timeframe")}
+    upstream_url = f"{_bridge_ws_base()}/ws/candles"
+    if forwarded:
+        upstream_url = f"{upstream_url}?{urlencode(forwarded)}"
+
+    if websockets is None:
+        log.warning("ws_candles proxy unavailable: websockets library not installed")
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1011, reason="websocket proxy unavailable")
+        return
+
+    try:
+        upstream = await websockets.connect(upstream_url, open_timeout=5.0)
+    except Exception as exc:
+        log.warning("ws_candles: cannot reach bridge at %s: %s", upstream_url, exc)
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1011, reason="bridge unreachable")
+        return
+
+    async def client_to_bridge() -> None:
+        while True:
+            message = await websocket.receive_text()
+            await upstream.send(message)
+
+    async def bridge_to_client() -> None:
+        async for message in upstream:
+            if isinstance(message, bytes):
+                await websocket.send_bytes(message)
+            else:
+                await websocket.send_text(message)
+
+    pump_client = asyncio.create_task(client_to_bridge())
+    pump_bridge = asyncio.create_task(bridge_to_client())
+
+    try:
+        done, pending = await asyncio.wait(
+            {pump_client, pump_bridge}, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+        for task in done:
+            if task.cancelled():
+                continue
+            exc = task.exception()
+            if exc is not None and not isinstance(exc, WebSocketDisconnect):
+                log.debug("ws_candles relay ended: %s", exc)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        log.warning("ws_candles relay error: %s", exc)
+    finally:
+        for task in (pump_client, pump_bridge):
+            task.cancel()
+        with contextlib.suppress(Exception):
+            await upstream.close()
+        with contextlib.suppress(Exception):
+            await websocket.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# React SPA — served from dashboard/frontend/dist (built by Vite)
+#
+# The catch-all route is registered last so /api/* and /ws/* keep priority.
+# It returns index.html for any unmatched path, which lets the client-side
+# router handle deep links like /shadow or /strategy/ema-scalp on hard refresh.
+# ─────────────────────────────────────────────────────────────────────────────
+
+if (FRONTEND_DIST / "index.html").exists():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(FRONTEND_DIST / "assets")),
+        name="assets",
+    )
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str):
+        candidate = FRONTEND_DIST / path
+        if path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+else:
+    log.warning(
+        "frontend/dist/index.html not found — run `npm run build` in dashboard/frontend/ "
+        "to serve the React SPA"
+    )
