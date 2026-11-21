@@ -10,8 +10,8 @@ export async function getJson<T>(url: string): Promise<T> {
   return data
 }
 
-export async function postJson<T, B = unknown>(url: string, body: B): Promise<T> {
-  const { data } = await api.post<T>(url, body)
+export async function postJson<T, B = unknown>(url: string, body: B, config?: import('axios').AxiosRequestConfig): Promise<T> {
+  const { data } = await api.post<T>(url, body, config)
   return data
 }
 

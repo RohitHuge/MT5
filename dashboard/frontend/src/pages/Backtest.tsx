@@ -405,7 +405,7 @@ export function Backtest() {
         to_date: toDate,
         params: numericParams,
       }
-      return postJson<BacktestResult, BacktestRequest>('/api/backtest/run', body)
+      return postJson<BacktestResult, BacktestRequest>('/api/backtest/run', body, { timeout: 120_000 })
     },
     onSuccess: () => {
       setHistoryResult(null)
