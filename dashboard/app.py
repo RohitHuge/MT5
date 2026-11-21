@@ -84,9 +84,10 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 
 # Strategy service base URLs (internal Docker network) — used by /api/backtest/run
 STRATEGY_URLS: dict[str, str] = {
-    "ema-scalp": os.getenv("STRATEGY_EMA_URL", "http://strategy-ema-scalp:8080"),
-    "ob-fvg":    os.getenv("STRATEGY_OB_URL",  "http://strategy-ob-fvg:8080"),
-    "liq-sweep": os.getenv("STRATEGY_LIQ_URL", "http://strategy-liq-sweep:8080"),
+    "ema-scalp":     os.getenv("STRATEGY_EMA_URL", "http://strategy-ema-scalp:8080"),
+    "ob-fvg":        os.getenv("STRATEGY_OB_URL",  "http://strategy-ob-fvg:8080"),
+    "liq-sweep":     os.getenv("STRATEGY_LIQ_URL", "http://strategy-liq-sweep:8080"),
+    "oco-dual-stop": os.getenv("STRATEGY_OCO_URL", "http://strategy-oco:8080"),
 }
 
 
